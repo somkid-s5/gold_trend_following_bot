@@ -100,6 +100,12 @@ Generate a report from an exported backtest trade CSV:
 python main.py --mode=report --report-source=reports/trend_following_backtest_trades.csv
 ```
 
+Run a 12-month in-sample / out-of-sample check for the trend strategy:
+
+```bash
+python scripts/run_trend_oos_analysis.py --symbol XAUUSD --days 365 --split-ratio 0.7
+```
+
 ## Backtest data
 
 The backtester consumes a CSV with:
