@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+logs/
+reports/
+data/real_*.csv
+data/*_180d.csv
+data/*_365d.csv

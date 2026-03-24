@@ -1,0 +1,95 @@
+mt5:
+  login: 0
+  password: "CHANGE_ME"
+  server: "YourBroker-Demo"
+  path: null
+  timeout: 60000
+  magic_number: 260324
+  deviation: 20
+
+trading:
+  symbol: "XAUUSD"
+  timezone: "UTC"
+  poll_seconds: 60
+  reconnect_seconds: 15
+  history_bars:
+    trend_following: 400
+    scalping_smc: 300
+    linear_grid: 500
+
+risk:
+  risk_per_trade_pct: 1.0
+  max_daily_loss_pct: 3.0
+  max_total_drawdown_pct: 12.0
+  max_spread_points: 30
+  min_rr_ratio: 2.0
+  allow_live_trading: false
+  allow_strategy_addons:
+    trend_following: 1
+    scalping_smc: 1
+    linear_grid: 3
+  breakeven_rr_trigger: 1.0
+  trailing_stop_atr_multiple: 1.0
+  close_all_on_daily_limit: true
+
+sessions:
+  london_ny_overlap:
+    start_utc: "12:00"
+    end_utc: "16:00"
+
+symbols:
+  XAUUSD:
+    point: 0.01
+    contract_size: 100
+    min_lot: 0.01
+    max_lot: 20.0
+    lot_step: 0.01
+
+strategies:
+  trend_following:
+    enabled: true
+    timeframe: "H1"
+    fast_ema: 50
+    slow_ema: 200
+    rsi_period: 14
+    atr_period: 14
+    atr_sl_multiplier: 1.5
+    take_profit_rr: 2.0
+  scalping_smc:
+    enabled: true
+    timeframe: "M5"
+    bb_period: 20
+    bb_std: 2.0
+    macd_fast: 12
+    macd_slow: 26
+    macd_signal: 9
+    volume_window: 20
+    atr_period: 14
+    atr_sl_multiplier: 1.2
+    take_profit_rr: 1.5
+  linear_grid:
+    enabled: true
+    timeframe: "H4"
+    atr_period: 14
+    grid_levels: 3
+    spacing_atr_multiplier: 0.8
+    zone_lookback: 30
+    take_profit_atr_multiplier: 1.2
+    max_positions: 3
+
+news_filter:
+  enabled: true
+  provider: "manual"
+  provider_url: null
+  local_json_path: null
+  minutes_before: 45
+  minutes_after: 30
+  high_impact_events:
+    - "2026-03-25T12:30:00+00:00"
+    - "2026-03-27T12:30:00+00:00"
+
+backtest:
+  initial_balance: 10000.0
+  fee_per_lot: 7.0
+  slippage_points: 5
+  csv_path: "data/xauusd_h1.csv"

@@ -1,0 +1,221 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
+
+import pandas as pd
+
+from src.broker.mt5_connector import MT5Connector
+from src.data.data_handler import DataHandler
+from src.data.news_calendar import NewsCalendar
+from src.risk.risk_manager import RiskDecision, RiskManager
+from src.strategies import Signal, Strategy
+
+
+@dataclass(slots=True)
+class EngineResult:
+    strategy: str
+    status: str
+    details: str
+
+
+class TradingEngine:
+    def __init__(
+        self,
+        connector: MT5Connector | None,
+        data_handler: DataHandler,
+        risk_manager: RiskManager,
+        strategies: dict[str, Strategy],
+        config: dict[str, Any],
+        logger: Any,
+        mode: str = "live",
+    ) -> None:
+        self.connector = connector
+        self.data_handler = data_handler
+        self.risk_manager = risk_manager
+        self.strategies = strategies
+        self.config = config
+        self.logger = logger
+        self.mode = mode
+        self.last_bar_time: dict[str, pd.Timestamp] = {}
+        self.news_calendar = NewsCalendar(config["news_filter"])
+
+    def _live_account_state(self) -> tuple[float, float]:
+        if self.connector is None:
+            raise ValueError("Live mode requires MT5Connector")
+        snapshot = self.connector.get_account_info()
+        self.risk_manager.update_equity_state(snapshot.balance, snapshot.equity)
+        return snapshot.balance, snapshot.equity
+
+    def _passes_risk(self, spread_points: float, now_utc: datetime, equity: float) -> RiskDecision:
+        for decision in (
+            self.risk_manager.check_daily_dd(equity),
+            self.risk_manager.check_total_dd(equity),
+            self.risk_manager.check_spread(spread_points),
+            self.risk_manager.news_filter(now_utc, self.config["news_filter"]),
+        ):
+            if not decision.allowed:
+                return decision
+        return RiskDecision(True)
+
+    def _strategy_positions(self, symbol: str, strategy_name: str) -> list[dict[str, Any]]:
+        if self.connector is None:
+            return []
+        positions = self.connector.get_positions(symbol)
+        return [pos for pos in positions if strategy_name in pos.get("comment", "")]
+
+    def _refresh_news_events(self) -> None:
+        try:
+            self.config["news_filter"]["resolved_events"] = self.news_calendar.get_events()
+        except Exception as exc:  # pragma: no cover - network/runtime dependent
+            self.logger.warning("News event refresh failed: %s", exc)
+
+    def _close_all_positions(self, symbol: str) -> list[EngineResult]:
+        if self.connector is None:
+            return []
+        results: list[EngineResult] = []
+        for position in self.connector.get_positions(symbol):
+            ticket = int(position["ticket"])
+            self.connector.close_position(ticket)
+            strategy = position.get("comment", "portfolio_guard")
+            results.append(EngineResult(strategy, "closed", f"Closed ticket {ticket} after risk breach"))
+        return results
+
+    def _manage_open_positions(self, symbol: str, frame: pd.DataFrame, strategy_name: str) -> list[EngineResult]:
+        if self.connector is None:
+            return []
+        positions = self._strategy_positions(symbol, strategy_name)
+        if not positions:
+            return []
+
+        atr_series = frame.get("atr")
+        atr_value = float(atr_series.iloc[-1]) if atr_series is not None else float(frame["high"].iloc[-1] - frame["low"].iloc[-1])
+        tick = self.connector.get_symbol_tick(symbol)
+        point = float(self.connector.get_symbol_info(symbol).point or 0.01)
+        results: list[EngineResult] = []
+
+        for position in positions:
+            action = "BUY" if int(position["type"]) == 0 else "SELL"
+            current_price = float(tick.bid if action == "BUY" else tick.ask)
+            entry_price = float(position["price_open"])
+            current_sl = float(position["sl"])
+            current_tp = float(position["tp"])
+            breakeven_trigger = self.risk_manager.breakeven_price(entry_price, current_sl, action)
+            move_to_be = current_price >= breakeven_trigger if action == "BUY" else current_price <= breakeven_trigger
+            new_sl = current_sl
+
+            if move_to_be:
+                new_sl = max(current_sl, entry_price) if action == "BUY" else min(current_sl, entry_price)
+
+            trailing_candidate = self.risk_manager.trailing_stop_price(current_price, atr_value, action)
+            if action == "BUY" and trailing_candidate > new_sl + point:
+                new_sl = trailing_candidate
+            if action == "SELL" and (new_sl == 0 or trailing_candidate < new_sl - point):
+                new_sl = trailing_candidate
+
+            if abs(new_sl - current_sl) >= point:
+                self.connector.modify_position(int(position["ticket"]), sl=new_sl, tp=current_tp)
+                results.append(
+                    EngineResult(
+                        strategy_name,
+                        "managed",
+                        f"Updated SL for ticket {position['ticket']} to {new_sl:.2f}",
+                    )
+                )
+
+        return results
+
+    def _is_new_bar(self, strategy_name: str, frame: pd.DataFrame) -> bool:
+        current = frame.iloc[-1]["time"]
+        previous = self.last_bar_time.get(strategy_name)
+        if previous is not None and current <= previous:
+            return False
+        self.last_bar_time[strategy_name] = current
+        return True
+
+    def _execute_signal(self, symbol: str, signal: Signal, equity: float) -> EngineResult:
+        if self.connector is None:
+            raise ValueError("Signal execution requires MT5Connector")
+        symbol_info = self.connector.get_symbol_info(symbol)
+        sl_distance = abs(signal.entry - signal.sl)
+        lot = self.risk_manager.calculate_lot(
+            equity=equity,
+            risk_pct=float(self.config["risk"]["risk_per_trade_pct"]),
+            sl_distance_price=sl_distance,
+            tick_size=float(symbol_info.trade_tick_size or symbol_info.point),
+            tick_value=float(symbol_info.trade_tick_value or (symbol_info.contract_size * symbol_info.point)),
+        )
+        result = self.connector.send_order(
+            symbol=symbol,
+            action=signal.action,
+            volume=lot,
+            sl=signal.sl,
+            tp=signal.tp,
+            comment=f"{signal.strategy}|conf={signal.confidence:.2f}",
+        )
+        self.logger.info("Order sent: %s", result)
+        return EngineResult(signal.strategy, "executed", f"{signal.action} {lot} lots")
+
+    def run(self, symbol: str, strategy_name: str | None = None) -> list[EngineResult]:
+        if self.mode != "live":
+            raise ValueError("TradingEngine.run is for live mode only")
+
+        _, equity = self._live_account_state()
+        now_utc = datetime.now(timezone.utc)
+        results: list[EngineResult] = []
+        self._refresh_news_events()
+
+        daily_guard = self.risk_manager.check_daily_dd(equity)
+        total_guard = self.risk_manager.check_total_dd(equity)
+        if (not daily_guard.allowed or not total_guard.allowed) and self.config["risk"].get("close_all_on_daily_limit", False):
+            self.logger.warning("Risk breach detected. Closing open positions.")
+            results.extend(self._close_all_positions(symbol))
+            reason = daily_guard.reason if not daily_guard.allowed else total_guard.reason
+            results.append(EngineResult("portfolio", "halted", reason))
+            return results
+
+        for name, strategy in self.strategies.items():
+            if strategy_name and name != strategy_name:
+                continue
+
+            history = int(self.config["trading"]["history_bars"][name])
+            frame = self.data_handler.get_live_bars(symbol, strategy.timeframe, history)
+            if not self._is_new_bar(name, frame):
+                continue
+
+            frame_for_management = frame.copy()
+            frame_for_management["atr"] = (
+                frame_for_management["high"] - frame_for_management["low"]
+            ).ewm(alpha=1 / 14, adjust=False).mean()
+            results.extend(self._manage_open_positions(symbol, frame_for_management, name))
+
+            symbol_info = self.connector.get_symbol_info(symbol)
+            tick = self.connector.get_symbol_tick(symbol)
+            spread_points = (float(tick.ask) - float(tick.bid)) / float(symbol_info.point or 0.01)
+            decision = self._passes_risk(spread_points, now_utc, equity)
+            if not decision.allowed:
+                self.logger.info("Risk filter blocked %s: %s", name, decision.reason)
+                results.append(EngineResult(name, "skipped", decision.reason))
+                continue
+
+            existing_positions = self._strategy_positions(symbol, name)
+            max_positions = int(self.config["risk"]["allow_strategy_addons"].get(name, 1))
+            if len(existing_positions) >= max_positions:
+                results.append(EngineResult(name, "skipped", "Max positions reached"))
+                continue
+
+            context = {
+                "existing_positions": len(existing_positions),
+                "daily_drawdown_pct": self.risk_manager.daily_drawdown_pct(equity),
+                "max_daily_loss_pct": float(self.config["risk"]["max_daily_loss_pct"]),
+            }
+            signals = strategy.generate_signals(frame, context)
+            if not signals:
+                results.append(EngineResult(name, "idle", "No signal"))
+                continue
+
+            best_signal = max(signals, key=lambda item: item.confidence)
+            results.append(self._execute_signal(symbol, best_signal, equity))
+
+        return results
