@@ -42,6 +42,8 @@ class StrategyTests(unittest.TestCase):
                 "fast_ema": 50,
                 "slow_ema": 200,
                 "rsi_period": 14,
+                "rsi_buy_level": 40,
+                "rsi_sell_level": 60,
                 "atr_period": 14,
                 "atr_sl_multiplier": 1.5,
                 "take_profit_rr": 2.0,

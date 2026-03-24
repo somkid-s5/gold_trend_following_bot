@@ -33,8 +33,10 @@ class TrendFollowing:
 
         rr = float(self.config["take_profit_rr"])
         sl_distance = atr_value * float(self.config["atr_sl_multiplier"])
+        buy_level = float(self.config.get("rsi_buy_level", 40))
+        sell_level = float(self.config.get("rsi_sell_level", 60))
 
-        if last["ema_fast"] > last["ema_slow"] and prev["rsi"] < 40 <= last["rsi"]:
+        if last["ema_fast"] > last["ema_slow"] and prev["rsi"] < buy_level <= last["rsi"]:
             entry = float(last["close"])
             signals.append(
                 Signal(
@@ -48,7 +50,7 @@ class TrendFollowing:
                 )
             )
 
-        if last["ema_fast"] < last["ema_slow"] and prev["rsi"] > 60 >= last["rsi"]:
+        if last["ema_fast"] < last["ema_slow"] and prev["rsi"] > sell_level >= last["rsi"]:
             entry = float(last["close"])
             signals.append(
                 Signal(
