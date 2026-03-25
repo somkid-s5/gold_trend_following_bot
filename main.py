@@ -4,6 +4,7 @@ import argparse
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -88,6 +89,7 @@ def run_live(config: dict[str, Any], symbol: str, strategy_name: str | None) -> 
         mode="live",
         notifier=notifier,
     )
+    startup_alert_sent = False
 
     try:
         while True:
@@ -95,17 +97,43 @@ def run_live(config: dict[str, Any], symbol: str, strategy_name: str | None) -> 
                 if not connector.initialized:
                     connector.connect_mt5()
                     logger.info("Connected to MT5")
+                    if (
+                        notifier.is_enabled()
+                        and config.get("notifications", {}).get("telegram", {}).get("send_startup_alerts", True)
+                        and not startup_alert_sent
+                    ):
+                        stamp = datetime.now(timezone.utc)
+                        if notifier.should_send_event("startup", stamp):
+                            notifier.send_message(
+                                notifier.build_event_message("Startup", stamp, f"Connected to MT5 for {symbol}")
+                            )
+                            notifier.mark_event_sent("startup", stamp)
+                        startup_alert_sent = True
                 results = engine.run(symbol=symbol, strategy_name=strategy_name)
                 for result in results:
                     logger.info("%s | %s | %s", result.strategy, result.status, result.details)
                 time.sleep(int(config["trading"]["poll_seconds"]))
             except Exception as exc:
                 logger.exception("Live loop error: %s", exc)
+                if notifier.is_enabled() and config.get("notifications", {}).get("telegram", {}).get("send_error_alerts", True):
+                    stamp = datetime.now(timezone.utc)
+                    if notifier.should_send_event("error", stamp):
+                        notifier.send_message(
+                            notifier.build_event_message("Error", stamp, str(exc))
+                        )
+                        notifier.mark_event_sent("error", stamp)
                 connector.disconnect()
                 time.sleep(int(config["trading"].get("reconnect_seconds", 15)))
     finally:
         connector.disconnect()
         logger.info("Disconnected from MT5")
+        if notifier.is_enabled() and config.get("notifications", {}).get("telegram", {}).get("send_shutdown_alerts", True):
+            stamp = datetime.now(timezone.utc)
+            if notifier.should_send_event("shutdown", stamp):
+                notifier.send_message(
+                    notifier.build_event_message("Shutdown", stamp, f"Disconnected from MT5 for {symbol}")
+                )
+                notifier.mark_event_sent("shutdown", stamp)
 
 
 def run_backtest(config: dict[str, Any], symbol: str, strategy_name: str, csv_path: str | None) -> None:

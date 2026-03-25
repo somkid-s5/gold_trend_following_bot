@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +54,22 @@ class TelegramNotifier:
         state["last_daily_summary_date"] = now_utc.date().isoformat()
         self.save_state(state)
 
+    def should_send_event(self, event_key: str, now_utc: datetime) -> bool:
+        if not self.is_enabled():
+            return False
+        state = self.load_state()
+        last_sent = state.get(f"event_{event_key}_sent_at")
+        if not last_sent:
+            return True
+        last_dt = datetime.fromisoformat(last_sent)
+        cooldown = timedelta(minutes=int(self.config.get("event_cooldown_minutes", 30)))
+        return now_utc >= last_dt + cooldown
+
+    def mark_event_sent(self, event_key: str, now_utc: datetime) -> None:
+        state = self.load_state()
+        state[f"event_{event_key}_sent_at"] = now_utc.isoformat()
+        self.save_state(state)
+
     def send_message(self, text: str) -> bool:
         if not self.is_enabled():
             self.logger.info("Telegram notifier disabled or missing credentials.")
@@ -96,4 +112,11 @@ class TelegramNotifier:
             f"- Day win rate: `{win_rate:.2f}%`\n"
             f"- Guard status: `{guard_status}`\n"
             f"- Guard note: {reasons}"
+        )
+
+    def build_event_message(self, event_name: str, now_utc: datetime, details: str) -> str:
+        return (
+            f"*Bot {event_name}*\n"
+            f"- Time UTC: `{now_utc.isoformat()}`\n"
+            f"- Details: {details}"
         )

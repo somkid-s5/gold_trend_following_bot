@@ -51,6 +51,12 @@ class TelegramNotifierTests(unittest.TestCase):
         self.assertIn("trend_following", text)
         self.assertIn("10050.00", text)
 
+    def test_event_cooldown_blocks_immediate_repeat(self) -> None:
+        now = datetime(2026, 3, 25, 21, 5, tzinfo=timezone.utc)
+        self.assertTrue(self.notifier.should_send_event("startup", now))
+        self.notifier.mark_event_sent("startup", now)
+        self.assertFalse(self.notifier.should_send_event("startup", now))
+
 
 if __name__ == "__main__":
     unittest.main()

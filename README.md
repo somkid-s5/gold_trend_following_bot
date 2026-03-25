@@ -151,6 +151,18 @@ TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 ```
 
+Optional unattended startup on Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\register_live_bot_task.ps1 -TaskName GoldTradingBot -Symbol XAUUSD -Strategy trend_following
+```
+
+Manual launcher:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start_live_bot.ps1 -Symbol XAUUSD -Strategy trend_following
+```
+
 ## Backtest data
 
 The backtester consumes a CSV with:

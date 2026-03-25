@@ -126,3 +126,7 @@ notifications:
     bot_token_env: "TELEGRAM_BOT_TOKEN"
     chat_id_env: "TELEGRAM_CHAT_ID"
     send_guard_alerts: true
+    send_startup_alerts: true
+    send_shutdown_alerts: true
+    send_error_alerts: true
+    event_cooldown_minutes: 30
