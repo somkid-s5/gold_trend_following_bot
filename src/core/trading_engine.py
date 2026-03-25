@@ -14,6 +14,7 @@ from src.data.news_calendar import NewsCalendar
 from src.core.operational_guards import OperationalGuardEvaluator
 from src.risk.risk_manager import RiskDecision, RiskManager
 from src.strategies import Signal, Strategy
+from src.utils.telegram_notifier import TelegramNotifier
 
 
 @dataclass(slots=True)
@@ -33,6 +34,7 @@ class TradingEngine:
         config: dict[str, Any],
         logger: Any,
         mode: str = "live",
+        notifier: TelegramNotifier | None = None,
     ) -> None:
         self.connector = connector
         self.data_handler = data_handler
@@ -44,6 +46,7 @@ class TradingEngine:
         self.last_bar_time: dict[str, pd.Timestamp] = {}
         self.news_calendar = NewsCalendar(config["news_filter"])
         self.guard_evaluator = OperationalGuardEvaluator(config.get("operational_guards", {}))
+        self.notifier = notifier
 
     def _live_account_state(self) -> tuple[float, float]:
         if self.connector is None:
@@ -134,6 +137,62 @@ class TradingEngine:
             results.extend(self._close_all_positions(symbol))
         return results
 
+    def _load_guard_payload(self) -> dict[str, Any] | None:
+        guard_path = self.config.get("operational_guards", {}).get("guard_report_path")
+        if not guard_path:
+            return None
+        path = Path(guard_path)
+        if not path.exists():
+            return None
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def _maybe_send_guard_alert(self, guard_payload: dict[str, Any] | None) -> None:
+        if self.notifier is None or not self.notifier.is_enabled():
+            return
+        tg_cfg = self.config.get("notifications", {}).get("telegram", {})
+        if not tg_cfg.get("send_guard_alerts", True) or not guard_payload:
+            return
+        state = self.notifier.load_state()
+        guard_status = guard_payload.get("status")
+        if guard_status == "PAUSE" and state.get("last_guard_alert_status") != "PAUSE":
+            text = (
+                f"*Guard Alert*\n"
+                f"- Status: `PAUSE`\n"
+                f"- Reason: {', '.join(guard_payload.get('reasons', []))}\n"
+                f"- Generated: `{guard_payload.get('generated_at_utc', '')}`"
+            )
+            self.notifier.send_message(text)
+            state["last_guard_alert_status"] = "PAUSE"
+            self.notifier.save_state(state)
+        elif guard_status == "OK" and state.get("last_guard_alert_status") == "PAUSE":
+            state["last_guard_alert_status"] = "OK"
+            self.notifier.save_state(state)
+
+    def _maybe_send_daily_summary(self, symbol: str, balance: float, equity: float, now_utc: datetime) -> None:
+        if self.notifier is None or not self.notifier.should_send_daily_summary(now_utc):
+            return
+        if self.connector is None:
+            return
+        strategy_name = self.config.get("forward_test", {}).get("strategy", "trend_following")
+        trades = self.connector.get_strategy_closed_trades(
+            symbol=symbol,
+            strategy_name=strategy_name,
+            lookback_days=2,
+            current_balance=balance,
+        )
+        if not trades.empty:
+            trades = trades.loc[trades["time"].dt.date == now_utc.date()].copy()
+        guard_payload = self._load_guard_payload()
+        text = self.notifier.build_daily_summary(
+            strategy_name=strategy_name,
+            now_utc=now_utc,
+            account={"balance": balance, "equity": equity},
+            guard_payload=guard_payload,
+            trades_frame=trades,
+        )
+        self.notifier.send_message(text)
+        self.notifier.mark_daily_summary_sent(now_utc)
+
     def _manage_open_positions(self, symbol: str, frame: pd.DataFrame, strategy_name: str) -> list[EngineResult]:
         if self.connector is None:
             return []
@@ -219,6 +278,7 @@ class TradingEngine:
         self._refresh_news_events()
         pause_results = self._check_operational_pause(symbol)
         if pause_results:
+            self._maybe_send_guard_alert(self._load_guard_payload())
             self._write_runtime_status(
                 {
                     "timestamp_utc": now_utc.isoformat(),
@@ -232,6 +292,8 @@ class TradingEngine:
             return pause_results
 
         self._refresh_operational_guard_report(symbol, balance)
+        guard_payload = self._load_guard_payload()
+        self._maybe_send_guard_alert(guard_payload)
         pause_results = self._check_operational_pause(symbol)
         if pause_results:
             self._write_runtime_status(
@@ -318,4 +380,5 @@ class TradingEngine:
                 "balance": balance,
             }
         )
+        self._maybe_send_daily_summary(symbol, balance, equity, now_utc)
         return results

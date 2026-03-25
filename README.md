@@ -82,6 +82,7 @@ python main.py --mode=live --symbol=XAUUSD --strategy=trend_following
 ```
 
 `main.py` now loads `.env` automatically, refreshes guard status from MT5 deal history, writes a runtime heartbeat, and will stop opening new entries if the operational guard flips to `PAUSE`.
+It can also send one Telegram daily summary plus guard alerts.
 
 Backtest:
 
@@ -142,6 +143,13 @@ Monitor these files while it runs:
 - `reports/runtime_status.json`
 - `reports/guard_status.json`
 - `logs/gold_trading_bot.log`
+
+Add these to `.env` for Telegram:
+
+```env
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
+```
 
 ## Backtest data
 

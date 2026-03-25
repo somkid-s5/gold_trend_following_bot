@@ -23,6 +23,7 @@ from src.strategies.trend_following import TrendFollowing
 from src.utils.backtester import Backtester
 from src.utils.logger import setup_logger
 from src.utils.reporting import PerformanceReporter
+from src.utils.telegram_notifier import TelegramNotifier
 
 
 def load_dotenv(dotenv_path: Path) -> None:
@@ -76,6 +77,7 @@ def run_live(config: dict[str, Any], symbol: str, strategy_name: str | None) -> 
     connector = MT5Connector(config["mt5"])
     data_handler = DataHandler(connector)
     risk_manager = RiskManager(config["risk"], config["symbols"][symbol])
+    notifier = TelegramNotifier(config.get("notifications", {}).get("telegram", {}), logger)
     engine = TradingEngine(
         connector=connector,
         data_handler=data_handler,
@@ -84,6 +86,7 @@ def run_live(config: dict[str, Any], symbol: str, strategy_name: str | None) -> 
         config=config,
         logger=logger,
         mode="live",
+        notifier=notifier,
     )
 
     try:
