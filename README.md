@@ -1,3 +1,5 @@
+![Gold Trading Bot](./logo.png)
+
 # Gold Trading Bot
 
 โปรเจกต์นี้คือบอทเทรดทองคำ `XAUUSD` สำหรับ `MetaTrader 5` ที่พัฒนาด้วย Python โดยโฟกัสที่แนวทาง `trend_following` เป็นหลัก และออกแบบให้สามารถรันแบบอัตโนมัติได้ต่อเนื่อง พร้อมระบบควบคุมความเสี่ยง, guard conditions, runtime heartbeat, และสรุปรายวันผ่าน Telegram
@@ -259,6 +261,11 @@ python scripts/run_operational_guard_check.py --trades-csv=reports/trend_followi
 ```bash
 python -m unittest discover -s tests
 ```
+
+## เอกสารแนะนำเพิ่มเติม
+
+- [FORWARD_TEST_CHECKLIST.md](/D:/MASTER/PROJECTS/Algorithmic%20Trading/gold_trading_bot/FORWARD_TEST_CHECKLIST.md)
+- [RUNBOOK_TH.md](/D:/MASTER/PROJECTS/Algorithmic%20Trading/gold_trading_bot/RUNBOOK_TH.md)
 
 ## เอกสารเสริม
 
