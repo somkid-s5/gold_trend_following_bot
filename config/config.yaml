@@ -101,3 +101,14 @@ forward_test:
   review_time_utc: "21:00"
   minimum_days: 14
   target_trades_per_week: 3
+
+operational_guards:
+  enabled: true
+  evaluation_window: 100
+  minimum_trades: 20
+  max_consecutive_losses: 6
+  max_drawdown_pct: 5.0
+  min_win_rate_pct: 45.0
+  pause_new_entries_on_trigger: true
+  close_positions_on_trigger: false
+  guard_report_path: "reports/guard_status.json"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import unittest
 from unittest.mock import MagicMock
 
@@ -38,6 +39,12 @@ class EngineIntegrationTests(unittest.TestCase):
             },
             "news_filter": {"enabled": False, "provider": "manual", "high_impact_events": []},
             "trading": {"history_bars": {"trend_following": 50}},
+            "operational_guards": {
+                "enabled": True,
+                "guard_report_path": "reports/test_guard_status.json",
+                "pause_new_entries_on_trigger": True,
+                "close_positions_on_trigger": False,
+            },
         }
         self.symbol_cfg = {
             "point": 0.01,
@@ -58,6 +65,9 @@ class EngineIntegrationTests(unittest.TestCase):
                 "volume": [1500 for _ in range(50)],
             }
         )
+        guard_path = self.config["operational_guards"]["guard_report_path"]
+        if os.path.exists(guard_path):
+            os.remove(guard_path)
 
     def _build_connector(self) -> MagicMock:
         connector = MagicMock()
@@ -123,6 +133,25 @@ class EngineIntegrationTests(unittest.TestCase):
         results = engine.run("XAUUSD", "trend_following")
         self.assertTrue(any(item.status == "managed" for item in results))
         connector.modify_position.assert_called()
+
+    def test_engine_pauses_when_guard_file_requests_pause(self) -> None:
+        guard_path = self.config["operational_guards"]["guard_report_path"]
+        with open(guard_path, "w", encoding="utf-8") as handle:
+            handle.write('{"status":"PAUSE","reasons":["Loss streak exceeded"],"metrics":{"total_trades":25}}')
+        connector = self._build_connector()
+        self.data_handler.get_live_bars = MagicMock(return_value=self.frame)
+        engine = TradingEngine(
+            connector=connector,
+            data_handler=self.data_handler,
+            risk_manager=self.risk_manager,
+            strategies={"trend_following": DummyStrategy(None)},
+            config=self.config,
+            logger=setup_logger("test_engine_pause"),
+            mode="live",
+        )
+        results = engine.run("XAUUSD", "trend_following")
+        self.assertEqual(results[0].status, "paused")
+        connector.send_order.assert_not_called()
 
 
 if __name__ == "__main__":

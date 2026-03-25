@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -9,6 +10,7 @@ import pandas as pd
 from src.broker.mt5_connector import MT5Connector
 from src.data.data_handler import DataHandler
 from src.data.news_calendar import NewsCalendar
+from src.core.operational_guards import OperationalGuardEvaluator
 from src.risk.risk_manager import RiskDecision, RiskManager
 from src.strategies import Signal, Strategy
 
@@ -40,6 +42,7 @@ class TradingEngine:
         self.mode = mode
         self.last_bar_time: dict[str, pd.Timestamp] = {}
         self.news_calendar = NewsCalendar(config["news_filter"])
+        self.guard_evaluator = OperationalGuardEvaluator(config.get("operational_guards", {}))
 
     def _live_account_state(self) -> tuple[float, float]:
         if self.connector is None:
@@ -80,6 +83,22 @@ class TradingEngine:
             self.connector.close_position(ticket)
             strategy = position.get("comment", "portfolio_guard")
             results.append(EngineResult(strategy, "closed", f"Closed ticket {ticket} after risk breach"))
+        return results
+
+    def _check_operational_pause(self, symbol: str) -> list[EngineResult]:
+        guard_cfg = self.config.get("operational_guards", {})
+        if not guard_cfg.get("enabled", False):
+            return []
+        guard_path = guard_cfg.get("guard_report_path")
+        if not guard_path:
+            return []
+        status = self.guard_evaluator.load_guard_file(Path(guard_path))
+        if status is None or status.status != "PAUSE":
+            return []
+
+        results = [EngineResult("portfolio", "paused", "; ".join(status.reasons))]
+        if guard_cfg.get("close_positions_on_trigger", False):
+            results.extend(self._close_all_positions(symbol))
         return results
 
     def _manage_open_positions(self, symbol: str, frame: pd.DataFrame, strategy_name: str) -> list[EngineResult]:
@@ -165,6 +184,9 @@ class TradingEngine:
         now_utc = datetime.now(timezone.utc)
         results: list[EngineResult] = []
         self._refresh_news_events()
+        pause_results = self._check_operational_pause(symbol)
+        if pause_results:
+            return pause_results
 
         daily_guard = self.risk_manager.check_daily_dd(equity)
         total_guard = self.risk_manager.check_total_dd(equity)

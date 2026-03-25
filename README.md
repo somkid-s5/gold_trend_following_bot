@@ -123,6 +123,12 @@ Create a forward-test report from exported trades:
 python scripts/run_forward_test_report.py --trades-csv=reports/trend_following_365d_trades.csv --strategy=trend_following
 ```
 
+Evaluate operational stop conditions from recent trades:
+
+```bash
+python scripts/run_operational_guard_check.py --trades-csv=reports/trend_following_365d_trades.csv
+```
+
 ## Backtest data
 
 The backtester consumes a CSV with:
@@ -144,3 +150,4 @@ A synthetic starter dataset is included at `data/xauusd_m5.csv` so the backteste
 - Add broker-specific checks for `ORDER_FILLING_*`, slippage, and symbol suffixes such as `XAUUSDm`.
 - Backtests export trade-by-trade CSV reports into `reports/` automatically.
 - Use [FORWARD_TEST_CHECKLIST.md](/D:/MASTER/PROJECTS/Algorithmic%20Trading/gold_trading_bot/FORWARD_TEST_CHECKLIST.md) for Demo validation before any live rollout.
+- If `reports/guard_status.json` switches to `PAUSE`, the live engine will stop opening new entries.
