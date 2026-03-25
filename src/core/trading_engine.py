@@ -155,11 +155,10 @@ class TradingEngine:
         state = self.notifier.load_state()
         guard_status = guard_payload.get("status")
         if guard_status == "PAUSE" and state.get("last_guard_alert_status") != "PAUSE":
-            text = (
-                f"*Guard Alert*\n"
-                f"- Status: `PAUSE`\n"
-                f"- Reason: {', '.join(guard_payload.get('reasons', []))}\n"
-                f"- Generated: `{guard_payload.get('generated_at_utc', '')}`"
+            text = self.notifier.build_event_message(
+                "Guard Alert",
+                datetime.now(timezone.utc),
+                f"สถานะ PAUSE | เหตุผล: {', '.join(guard_payload.get('reasons', []))}"
             )
             self.notifier.send_message(text)
             state["last_guard_alert_status"] = "PAUSE"
