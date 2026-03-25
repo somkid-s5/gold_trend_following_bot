@@ -1,187 +1,267 @@
 # Gold Trading Bot
 
-Python trading bot structure for XAUUSD on MetaTrader 5.
+โปรเจกต์นี้คือบอทเทรดทองคำ `XAUUSD` สำหรับ `MetaTrader 5` ที่พัฒนาด้วย Python โดยโฟกัสที่แนวทาง `trend_following` เป็นหลัก และออกแบบให้สามารถรันแบบอัตโนมัติได้ต่อเนื่อง พร้อมระบบควบคุมความเสี่ยง, guard conditions, runtime heartbeat, และสรุปรายวันผ่าน Telegram
 
-Current operational default:
+สถานะปัจจุบันของโปรเจกต์:
 
-- `trend_following`: enabled and tuned from 12-month backtest plus out-of-sample validation
+- เปิดใช้งานจริงเฉพาะ `trend_following`
+- `scalping_smc` และ `linear_grid` ถูกปิดไว้เป็น research-only
+- รองรับ `.env`
+- รองรับ MT5 reconnect อัตโนมัติ
+- รองรับ Telegram daily summary และ alert
+- รองรับ guard สำหรับหยุดเปิดไม้ใหม่เมื่อ performance แย่ลง
 
-Research-only modules:
+## ภาพรวมกลยุทธ์
 
-- `scalping_smc`: disabled by default
-- `linear_grid`: disabled by default
+กลยุทธ์ที่ใช้งานอยู่คือ `trend_following` โดยใช้แนวคิด:
 
-The project now also includes:
+- `EMA 34 / EMA 150`
+- `RSI 14`
+- `ATR 14`
+- `ATR SL Multiplier = 1.2`
+- `Take Profit RR = 2.0`
 
-- automatic MT5 reconnect handling
-- breakeven and trailing-stop management for live positions
-- pluggable news calendar input from manual config, local JSON, or JSON URL
-- sample CSV data and test coverage for strategies, risk, and backtest flow
+ค่าชุดนี้มาจากการจูนบนข้อมูลจริงย้อนหลัง และผ่านการเช็กแบบ out-of-sample แล้วดีกว่าค่า baseline เดิม
 
-## Project structure
+## โครงสร้างโปรเจกต์
 
 ```text
 gold_trading_bot/
 ├── config/
 │   └── config.yaml
+├── data/
+├── logs/
+├── reports/
+├── scripts/
+│   ├── register_live_bot_task.ps1
+│   ├── run_forward_test_report.py
+│   ├── run_mt5_backtests.py
+│   ├── run_operational_guard_check.py
+│   ├── run_trend_grid_search.py
+│   ├── run_trend_oos_analysis.py
+│   └── start_live_bot.ps1
 ├── src/
 │   ├── broker/
-│   │   └── mt5_connector.py
-│   ├── data/
-│   │   └── data_handler.py
-│   ├── strategies/
-│   │   ├── __init__.py
-│   │   ├── trend_following.py
-│   │   ├── scalping_smc.py
-│   │   └── linear_grid.py
-│   ├── risk/
-│   │   └── risk_manager.py
 │   ├── core/
-│   │   └── trading_engine.py
+│   ├── data/
+│   ├── risk/
+│   ├── strategies/
 │   └── utils/
-│       ├── logger.py
-│       └── backtester.py
+├── tests/
+├── .env
+├── FORWARD_TEST_CHECKLIST.md
 ├── main.py
 ├── requirements.txt
 └── README.md
 ```
 
-## Install
+## ติดตั้ง
+
+ติดตั้ง dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Configure
+## การตั้งค่า `.env`
 
-Update `config/config.yaml` before live usage:
+สร้างไฟล์ [\.env](/D:/MASTER/PROJECTS/Algorithmic%20Trading/gold_trading_bot/.env) ที่ root ของโปรเจกต์:
 
-- `mt5.login`, `mt5.password`, `mt5.server`
-- `risk.allow_live_trading=true` only after demo testing
-- `news_filter.provider` set to `manual`, `json_file`, or `json_url`
-- `news_filter.high_impact_events` or JSON feed entries with UTC timestamps
-- `backtest.csv_path` to your exported historical dataset
+```env
+MT5_LOGIN=your_mt5_login
+MT5_PASSWORD=your_mt5_password
+MT5_SERVER=your_mt5_server
+MT5_PATH=C:\Program Files\MetaTrader 5 IC Markets Global\terminal64.exe
 
-Example JSON file for news events:
-
-```json
-{
-  "events": [
-    {"time": "2026-03-25T12:30:00+00:00"},
-    {"time": "2026-03-27T12:30:00+00:00"}
-  ]
-}
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+TELEGRAM_CHAT_ID=your_telegram_chat_id
 ```
 
-## Run
+คำอธิบาย:
 
-Live:
+- `MT5_*` ใช้สำหรับเชื่อมต่อบัญชี MT5
+- `TELEGRAM_*` ใช้ส่งสรุปรายวันและแจ้งเตือน
+
+หมายเหตุ:
+
+- โปรแกรมจะโหลด `.env` อัตโนมัติ
+- ถ้าไม่มีค่า Telegram บอทยังรันได้ แต่จะไม่ส่งข้อความ
+
+## การตั้งค่า `config.yaml`
+
+ไฟล์หลักอยู่ที่ [config.yaml](/D:/MASTER/PROJECTS/Algorithmic%20Trading/gold_trading_bot/config/config.yaml)
+
+หัวข้อสำคัญ:
+
+- `risk.allow_live_trading`
+  - ถ้าเป็น `false` จะไม่ยอมเข้าโหมด live
+- `strategies.*.enabled`
+  - ตอนนี้เปิดแค่ `trend_following`
+- `operational_guards`
+  - ตั้งเงื่อนไขหยุดเปิดไม้ใหม่
+- `notifications.telegram`
+  - ตั้งเวลาส่ง daily summary และเปิด/ปิด alerts
+- `runtime`
+  - ตั้ง path ของ heartbeat file
+
+## วิธีรัน
+
+### 1. รัน backtest
 
 ```bash
-python main.py --mode=live --symbol=XAUUSD --strategy=trend_following
+python main.py --mode=backtest --symbol=XAUUSD --strategy=trend_following
 ```
 
-`main.py` now loads `.env` automatically, refreshes guard status from MT5 deal history, writes a runtime heartbeat, and will stop opening new entries if the operational guard flips to `PAUSE`.
-It can also send one Telegram daily summary plus guard alerts.
-
-Backtest:
+ถ้าจะระบุไฟล์ CSV เอง:
 
 ```bash
 python main.py --mode=backtest --symbol=XAUUSD --strategy=trend_following --csv=data/xauusd_h1.csv
 ```
 
-Run tests:
+### 2. รัน live
 
-```bash
-python -m unittest discover -s tests
-```
+ก่อนรัน live ต้องเปิด `risk.allow_live_trading=true` ใน [config.yaml](/D:/MASTER/PROJECTS/Algorithmic%20Trading/gold_trading_bot/config/config.yaml)
 
-Generate a quick report from the latest bot log:
-
-```bash
-python main.py --mode=report
-```
-
-Generate a report from an exported backtest trade CSV:
-
-```bash
-python main.py --mode=report --report-source=reports/trend_following_backtest_trades.csv
-```
-
-Run a 12-month in-sample / out-of-sample check for the trend strategy:
-
-```bash
-python scripts/run_trend_oos_analysis.py --symbol XAUUSD --days 365 --split-ratio 0.7
-```
-
-Run trend parameter tuning:
-
-```bash
-python scripts/run_trend_grid_search.py --symbol XAUUSD --days 365 --split-ratio 0.7 --fast-emas 34,50 --slow-emas 150,200 --buy-levels 35,40 --sell-levels 60,65 --atr-multipliers 1.2,1.5 --rr-values 1.5,2.0 --top 8
-```
-
-Create a forward-test report from exported trades:
-
-```bash
-python scripts/run_forward_test_report.py --trades-csv=reports/trend_following_365d_trades.csv --strategy=trend_following
-```
-
-Evaluate operational stop conditions from recent trades:
-
-```bash
-python scripts/run_operational_guard_check.py --trades-csv=reports/trend_following_365d_trades.csv
-```
-
-Unattended run flow:
+จากนั้นรัน:
 
 ```bash
 python main.py --mode=live --symbol=XAUUSD --strategy=trend_following
 ```
 
-Monitor these files while it runs:
-
-- `reports/runtime_status.json`
-- `reports/guard_status.json`
-- `logs/gold_trading_bot.log`
-
-Add these to `.env` for Telegram:
-
-```env
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
-```
-
-Optional unattended startup on Windows:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\register_live_bot_task.ps1 -TaskName GoldTradingBot -Symbol XAUUSD -Strategy trend_following
-```
-
-Manual launcher:
+### 3. รันผ่าน PowerShell launcher
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\start_live_bot.ps1 -Symbol XAUUSD -Strategy trend_following
 ```
 
-## Backtest data
+## การตั้งให้เปิดอัตโนมัติบน Windows
 
-The backtester consumes a CSV with:
+สามารถลงทะเบียน Task Scheduler ได้ด้วย:
 
-```text
-time,open,high,low,close,volume
-2026-01-01T00:00:00Z,2620.1,2625.7,2618.3,2623.5,1450
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\register_live_bot_task.ps1 -TaskName GoldTradingBot -Symbol XAUUSD -Strategy trend_following
 ```
 
-You can export the historical candles from MT5 and save them locally for offline testing.
+พฤติกรรม:
 
-A synthetic starter dataset is included at `data/xauusd_m5.csv` so the backtester can run immediately.
+- เริ่มบอทเมื่อ logon
+- ใช้ launcher script ในการเปิด
+- เหมาะกับการรันทิ้งไว้บนเครื่อง Windows
 
-## Safety notes
+## Telegram ที่บอทส่งให้อัตโนมัติ
 
-- Hard stop loss is mandatory for every order.
-- Grid logic is bounded by `max_positions` and daily drawdown limits.
-- News filter supports manual config, local JSON, or JSON URL feeds.
-- Add broker-specific checks for `ORDER_FILLING_*`, slippage, and symbol suffixes such as `XAUUSDm`.
-- Backtests export trade-by-trade CSV reports into `reports/` automatically.
-- Use [FORWARD_TEST_CHECKLIST.md](/D:/MASTER/PROJECTS/Algorithmic%20Trading/gold_trading_bot/FORWARD_TEST_CHECKLIST.md) for Demo validation before any live rollout.
-- If `reports/guard_status.json` switches to `PAUSE`, the live engine will stop opening new entries.
+ถ้าตั้งค่า `TELEGRAM_BOT_TOKEN` และ `TELEGRAM_CHAT_ID` แล้ว บอทจะส่ง:
+
+- daily summary วันละครั้ง
+- guard alert เมื่อระบบเข้าสถานะ `PAUSE`
+- startup alert
+- error alert
+- shutdown alert
+
+ตั้งค่าเพิ่มเติมใน [config.yaml](/D:/MASTER/PROJECTS/Algorithmic%20Trading/gold_trading_bot/config/config.yaml):
+
+- `notifications.telegram.summary_time_utc`
+- `notifications.telegram.send_guard_alerts`
+- `notifications.telegram.send_startup_alerts`
+- `notifications.telegram.send_error_alerts`
+- `notifications.telegram.send_shutdown_alerts`
+
+## Guard และการหยุดเปิดไม้ใหม่อัตโนมัติ
+
+ระบบ guard จะประเมินจากผลการเทรดย้อนหลังของ strategy แล้วเขียนผลไปที่:
+
+- [guard_status.json](/D:/MASTER/PROJECTS/Algorithmic%20Trading/gold_trading_bot/reports/guard_status.json)
+
+ถ้าสถานะเป็น `PAUSE` บอทจะ:
+
+- หยุดเปิดออเดอร์ใหม่
+- ยังคงทำงานต่อ
+- ยังคงเขียน heartbeat
+- สามารถส่ง Telegram alert ได้
+
+เงื่อนไข guard ปัจจุบัน:
+
+- `evaluation_window: 100`
+- `minimum_trades: 20`
+- `max_consecutive_losses: 6`
+- `max_drawdown_pct: 5.0`
+- `min_win_rate_pct: 45.0`
+
+## ไฟล์สำคัญที่ใช้ติดตามสถานะ
+
+ถ้าคุณอยากเช็กสถานะบอทแบบเร็วๆ ให้ดู 3 จุดนี้:
+
+- [runtime_status.json](/D:/MASTER/PROJECTS/Algorithmic%20Trading/gold_trading_bot/reports/runtime_status.json)
+- [guard_status.json](/D:/MASTER/PROJECTS/Algorithmic%20Trading/gold_trading_bot/reports/guard_status.json)
+- [gold_trading_bot.log](/D:/MASTER/PROJECTS/Algorithmic%20Trading/gold_trading_bot/logs/gold_trading_bot.log)
+
+คำอธิบาย:
+
+- `runtime_status.json` บอกว่าบอทตอนนี้ `running`, `paused`, หรือ `halted`
+- `guard_status.json` บอกผลการประเมิน performance ล่าสุด
+- `log` ใช้ตรวจสอบข้อผิดพลาดและเหตุการณ์ทั้งหมด
+
+## สคริปต์วิจัยและวิเคราะห์
+
+### 1. ดึงข้อมูลจาก MT5 แล้ว backtest หลายวัน
+
+```bash
+python scripts/run_mt5_backtests.py --symbol XAUUSD --days 365 --strategies trend_following
+```
+
+### 2. วิเคราะห์แบบ in-sample / out-of-sample
+
+```bash
+python scripts/run_trend_oos_analysis.py --symbol XAUUSD --days 365 --split-ratio 0.7
+```
+
+### 3. จูน parameter ของ trend strategy
+
+```bash
+python scripts/run_trend_grid_search.py --symbol XAUUSD --days 365 --split-ratio 0.7 --fast-emas 34,50 --slow-emas 150,200 --buy-levels 35,40 --sell-levels 60,65 --atr-multipliers 1.2,1.5 --rr-values 1.5,2.0 --top 8
+```
+
+### 4. สร้าง forward test report จาก trade history
+
+```bash
+python scripts/run_forward_test_report.py --trades-csv=reports/trend_following_365d_trades.csv --strategy=trend_following
+```
+
+### 5. ประเมิน operational guard จากไฟล์ trades
+
+```bash
+python scripts/run_operational_guard_check.py --trades-csv=reports/trend_following_365d_trades.csv
+```
+
+## วิธีใช้งานจริงแบบแนะนำ
+
+ลำดับที่แนะนำ:
+
+1. ตั้งค่า `.env`
+2. เช็ก [config.yaml](/D:/MASTER/PROJECTS/Algorithmic%20Trading/gold_trading_bot/config/config.yaml)
+3. เปิด `risk.allow_live_trading=true`
+4. ทดสอบ Telegram ให้ส่งได้
+5. รันผ่าน `start_live_bot.ps1`
+6. ถ้าต้องการให้เปิดเองตอน logon ให้ลงทะเบียน Task Scheduler
+7. ติดตามสถานะจากมือถือผ่าน MT5 app และ Telegram
+
+## คำเตือน
+
+- บอทนี้มีระบบป้องกันความเสี่ยง แต่ไม่สามารถรับประกันกำไรได้
+- MT5, broker execution, spread, slippage, symbol suffix และ quality ของข้อมูลย้อนหลัง มีผลต่อผลลัพธ์จริง
+- ควรทดลองบน Demo หรือขนาด lot เล็กก่อน
+- ถึงแม้ระบบจะรันอัตโนมัติได้มากขึ้น แต่ควรเช็ก log/Telegram เป็นระยะ
+
+## เช็กคุณภาพโค้ด
+
+รัน test:
+
+```bash
+python -m unittest discover -s tests
+```
+
+## เอกสารเสริม
+
+- [FORWARD_TEST_CHECKLIST.md](/D:/MASTER/PROJECTS/Algorithmic%20Trading/gold_trading_bot/FORWARD_TEST_CHECKLIST.md)
+
+เอกสารนี้ใช้สำหรับเช็ก readiness ก่อนขยับจาก Demo ไป Live
