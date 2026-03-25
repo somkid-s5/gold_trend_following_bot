@@ -100,23 +100,33 @@ class TelegramNotifier:
         day_profit = float(trades_frame["pnl"].sum()) if trades_frame is not None and not trades_frame.empty else 0.0
         win_rate = float((trades_frame["pnl"] > 0).mean() * 100) if trades_frame is not None and not trades_frame.empty else 0.0
         guard_status = guard_payload.get("status", "UNKNOWN") if guard_payload else "UNKNOWN"
-        reasons = ", ".join(guard_payload.get("reasons", [])) if guard_payload else "No guard payload"
+        reasons = ", ".join(guard_payload.get("reasons", [])) if guard_payload else "ไม่มีข้อมูล guard"
+        pnl_emoji = "🟢" if day_profit > 0 else "🔴" if day_profit < 0 else "🟡"
+        guard_emoji = "🟢" if guard_status == "OK" else "⛔" if guard_status == "PAUSE" else "⚪"
         return (
-            f"*XAUUSD Daily Summary*\n"
-            f"- Date UTC: `{now_utc.date().isoformat()}`\n"
-            f"- Strategy: `{strategy_name}`\n"
-            f"- Balance: `{account['balance']:.2f}`\n"
-            f"- Equity: `{account['equity']:.2f}`\n"
-            f"- Closed trades today: `{total_trades}`\n"
-            f"- Day PnL: `{day_profit:.2f}`\n"
-            f"- Day win rate: `{win_rate:.2f}%`\n"
-            f"- Guard status: `{guard_status}`\n"
-            f"- Guard note: {reasons}"
+            f"📊 *สรุปรายวัน XAUUSD*\n"
+            f"🗓 วันที่ UTC: `{now_utc.date().isoformat()}`\n"
+            f"🤖 กลยุทธ์: `{strategy_name}`\n"
+            f"💰 Balance: `{account['balance']:.2f}`\n"
+            f"💎 Equity: `{account['equity']:.2f}`\n"
+            f"🧾 จำนวนไม้ที่ปิดวันนี้: `{total_trades}`\n"
+            f"{pnl_emoji} กำไร/ขาดทุนวันนี้: `{day_profit:.2f}`\n"
+            f"🎯 Win rate วันนี้: `{win_rate:.2f}%`\n"
+            f"{guard_emoji} สถานะ Guard: `{guard_status}`\n"
+            f"📝 หมายเหตุ: {reasons}"
         )
 
     def build_event_message(self, event_name: str, now_utc: datetime, details: str) -> str:
+        event_map = {
+            "Startup": ("🚀", "บอทเริ่มทำงานแล้ว"),
+            "Shutdown": ("🛑", "บอทหยุดทำงาน"),
+            "Error": ("⚠️", "พบบอทเกิดข้อผิดพลาด"),
+            "Guard Alert": ("⛔", "Guard แจ้งเตือน"),
+            "Test": ("🧪", "ทดสอบระบบ Telegram"),
+        }
+        emoji, title = event_map.get(event_name, ("ℹ️", f"เหตุการณ์ {event_name}"))
         return (
-            f"*Bot {event_name}*\n"
-            f"- Time UTC: `{now_utc.isoformat()}`\n"
-            f"- Details: {details}"
+            f"{emoji} *{title}*\n"
+            f"🕒 เวลา UTC: `{now_utc.isoformat()}`\n"
+            f"📌 รายละเอียด: {details}"
         )

@@ -47,9 +47,10 @@ class TelegramNotifierTests(unittest.TestCase):
             guard_payload={"status": "OK", "reasons": ["All operational guard checks passed"]},
             trades_frame=pd.DataFrame({"pnl": [10.0, -5.0]}),
         )
-        self.assertIn("XAUUSD Daily Summary", text)
+        self.assertIn("สรุปรายวัน XAUUSD", text)
         self.assertIn("trend_following", text)
         self.assertIn("10050.00", text)
+        self.assertIn("สถานะ Guard", text)
 
     def test_event_cooldown_blocks_immediate_repeat(self) -> None:
         now = datetime(2026, 3, 25, 21, 5, tzinfo=timezone.utc)
