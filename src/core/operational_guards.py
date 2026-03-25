@@ -31,7 +31,7 @@ class OperationalGuardEvaluator:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
 
-    def evaluate_trade_frame(self, frame: pd.DataFrame) -> GuardStatus:
+    def evaluate_trade_frame(self, frame: pd.DataFrame, base_balance: float | None = None) -> GuardStatus:
         if frame.empty:
             return GuardStatus("OK", ["No trades available yet"], {"total_trades": 0})
 
@@ -44,11 +44,11 @@ class OperationalGuardEvaluator:
             drawdown_pct = (((peak - equity_curve) / peak.replace(0, pd.NA)) * 100).max()
             drawdown_pct = 0.0 if pd.isna(drawdown_pct) else float(drawdown_pct)
         else:
-            equity_curve = pnl.cumsum()
+            start_balance = float(base_balance) if base_balance is not None else 10_000.0
+            equity_curve = start_balance + pnl.cumsum()
             peak = equity_curve.cummax()
-            absolute_drawdown = (peak - equity_curve).max() if not equity_curve.empty else 0.0
-            baseline = max(1.0, abs(float(peak.max())) if not peak.empty else 1.0)
-            drawdown_pct = float((absolute_drawdown / baseline) * 100)
+            drawdown_pct = (((peak - equity_curve) / peak.replace(0, pd.NA)) * 100).max()
+            drawdown_pct = 0.0 if pd.isna(drawdown_pct) else float(drawdown_pct)
         gross_profit = pnl[pnl > 0].sum()
         gross_loss = -pnl[pnl < 0].sum()
         win_rate = float((pnl > 0).mean() * 100) if len(window_frame) else 0.0
@@ -88,11 +88,11 @@ class OperationalGuardEvaluator:
             reasons.append("All operational guard checks passed")
         return GuardStatus(status, reasons, metrics)
 
-    def evaluate_trade_csv(self, csv_path: str | Path) -> GuardStatus:
+    def evaluate_trade_csv(self, csv_path: str | Path, base_balance: float | None = None) -> GuardStatus:
         frame = pd.read_csv(csv_path)
         if "pnl" not in frame.columns:
             raise ValueError("Trades CSV must include a 'pnl' column")
-        return self.evaluate_trade_frame(frame)
+        return self.evaluate_trade_frame(frame, base_balance=base_balance)
 
     def load_guard_file(self, path: str | Path) -> GuardStatus | None:
         report_path = Path(path)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -22,6 +23,20 @@ from src.strategies.trend_following import TrendFollowing
 from src.utils.backtester import Backtester
 from src.utils.logger import setup_logger
 from src.utils.reporting import PerformanceReporter
+
+
+def load_dotenv(dotenv_path: Path) -> None:
+    if not dotenv_path.exists():
+        return
+    for raw_line in dotenv_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
 
 
 def load_config(path: Path) -> dict[str, Any]:
@@ -131,6 +146,7 @@ def run_report(report_source: str | None) -> None:
 
 def main() -> None:
     args = parse_args()
+    load_dotenv(ROOT / ".env")
     config = load_config(Path(args.config))
 
     if args.mode == "live":

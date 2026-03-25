@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 import pandas as pd
@@ -194,3 +195,68 @@ class MT5Connector:
             margin_free=float(data["margin_free"]),
             profit=float(data["profit"]),
         )
+
+    def get_history_deals(
+        self,
+        date_from: datetime,
+        date_to: datetime,
+        symbol: str | None = None,
+    ) -> list[dict[str, Any]]:
+        deals = mt5.history_deals_get(date_from, date_to)
+        if deals is None:
+            code, message = mt5.last_error()
+            raise RuntimeError(f"history_deals_get failed: {code} {message}")
+        rows = [deal._asdict() for deal in deals]
+        if symbol:
+            rows = [row for row in rows if row.get("symbol") == symbol]
+        return rows
+
+    def get_strategy_closed_trades(
+        self,
+        symbol: str,
+        strategy_name: str,
+        lookback_days: int,
+        current_balance: float | None = None,
+    ) -> pd.DataFrame:
+        date_to = datetime.now(timezone.utc)
+        date_from = date_to - timedelta(days=lookback_days)
+        deals = self.get_history_deals(date_from, date_to, symbol=symbol)
+        if not deals:
+            return pd.DataFrame(columns=["time", "strategy", "pnl", "balance"])
+
+        entry_in = getattr(mt5, "DEAL_ENTRY_IN", 0)
+        entry_out = getattr(mt5, "DEAL_ENTRY_OUT", 1)
+        position_strategy: dict[int, str] = {}
+        closed_rows: list[dict[str, Any]] = []
+
+        for deal in deals:
+            position_id = int(deal.get("position_id", 0))
+            comment = str(deal.get("comment", "") or "")
+            entry = int(deal.get("entry", -1))
+            if entry == entry_in and strategy_name in comment:
+                position_strategy[position_id] = strategy_name
+            elif entry == entry_out:
+                mapped_strategy = position_strategy.get(position_id)
+                if not mapped_strategy and strategy_name in comment:
+                    mapped_strategy = strategy_name
+                if mapped_strategy != strategy_name:
+                    continue
+                pnl = float(deal.get("profit", 0.0)) + float(deal.get("swap", 0.0)) + float(deal.get("commission", 0.0)) + float(deal.get("fee", 0.0))
+                closed_rows.append(
+                    {
+                        "time": pd.to_datetime(int(deal["time"]), unit="s", utc=True),
+                        "strategy": strategy_name,
+                        "pnl": pnl,
+                    }
+                )
+
+        frame = pd.DataFrame(closed_rows)
+        if frame.empty:
+            return pd.DataFrame(columns=["time", "strategy", "pnl", "balance"])
+        frame.sort_values("time", inplace=True)
+        frame.reset_index(drop=True, inplace=True)
+        if current_balance is None:
+            current_balance = float(self.get_account_info().balance)
+        starting_balance = current_balance - float(frame["pnl"].sum())
+        frame["balance"] = starting_balance + frame["pnl"].cumsum()
+        return frame

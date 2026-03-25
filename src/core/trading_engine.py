@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 from typing import Any
 
@@ -84,6 +85,38 @@ class TradingEngine:
             strategy = position.get("comment", "portfolio_guard")
             results.append(EngineResult(strategy, "closed", f"Closed ticket {ticket} after risk breach"))
         return results
+
+    def _write_runtime_status(self, payload: dict[str, Any]) -> None:
+        runtime_cfg = self.config.get("runtime", {})
+        if not runtime_cfg.get("write_heartbeat", False):
+            return
+        output_path = Path(runtime_cfg.get("heartbeat_path", "reports/runtime_status.json"))
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def _refresh_operational_guard_report(self, symbol: str, balance: float) -> None:
+        guard_cfg = self.config.get("operational_guards", {})
+        if not guard_cfg.get("enabled", False) or self.connector is None:
+            return
+        strategy_name = self.config.get("forward_test", {}).get("strategy", "trend_following")
+        trades = self.connector.get_strategy_closed_trades(
+            symbol=symbol,
+            strategy_name=strategy_name,
+            lookback_days=int(guard_cfg.get("lookback_days", 365)),
+            current_balance=balance,
+        )
+        status = self.guard_evaluator.evaluate_trade_frame(trades, base_balance=balance)
+        output_path = Path(guard_cfg.get("guard_report_path", "reports/guard_status.json"))
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "status": status.status,
+            "reasons": status.reasons,
+            "metrics": status.metrics,
+            "source": "mt5_history_auto",
+            "strategy": strategy_name,
+        }
+        output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def _check_operational_pause(self, symbol: str) -> list[EngineResult]:
         guard_cfg = self.config.get("operational_guards", {})
@@ -180,12 +213,37 @@ class TradingEngine:
         if self.mode != "live":
             raise ValueError("TradingEngine.run is for live mode only")
 
-        _, equity = self._live_account_state()
+        balance, equity = self._live_account_state()
         now_utc = datetime.now(timezone.utc)
         results: list[EngineResult] = []
         self._refresh_news_events()
         pause_results = self._check_operational_pause(symbol)
         if pause_results:
+            self._write_runtime_status(
+                {
+                    "timestamp_utc": now_utc.isoformat(),
+                    "symbol": symbol,
+                    "status": "paused",
+                    "details": [result.details for result in pause_results],
+                    "equity": equity,
+                    "balance": balance,
+                }
+            )
+            return pause_results
+
+        self._refresh_operational_guard_report(symbol, balance)
+        pause_results = self._check_operational_pause(symbol)
+        if pause_results:
+            self._write_runtime_status(
+                {
+                    "timestamp_utc": now_utc.isoformat(),
+                    "symbol": symbol,
+                    "status": "paused",
+                    "details": [result.details for result in pause_results],
+                    "equity": equity,
+                    "balance": balance,
+                }
+            )
             return pause_results
 
         daily_guard = self.risk_manager.check_daily_dd(equity)
@@ -195,6 +253,16 @@ class TradingEngine:
             results.extend(self._close_all_positions(symbol))
             reason = daily_guard.reason if not daily_guard.allowed else total_guard.reason
             results.append(EngineResult("portfolio", "halted", reason))
+            self._write_runtime_status(
+                {
+                    "timestamp_utc": now_utc.isoformat(),
+                    "symbol": symbol,
+                    "status": "halted",
+                    "details": [reason],
+                    "equity": equity,
+                    "balance": balance,
+                }
+            )
             return results
 
         for name, strategy in self.strategies.items():
@@ -240,4 +308,14 @@ class TradingEngine:
             best_signal = max(signals, key=lambda item: item.confidence)
             results.append(self._execute_signal(symbol, best_signal, equity))
 
+        self._write_runtime_status(
+            {
+                "timestamp_utc": now_utc.isoformat(),
+                "symbol": symbol,
+                "status": "running",
+                "details": [f"{item.strategy}:{item.status}:{item.details}" for item in results] or ["No new bar or no action"],
+                "equity": equity,
+                "balance": balance,
+            }
+        )
         return results

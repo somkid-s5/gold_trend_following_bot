@@ -41,10 +41,13 @@ class EngineIntegrationTests(unittest.TestCase):
             "trading": {"history_bars": {"trend_following": 50}},
             "operational_guards": {
                 "enabled": True,
+                "lookback_days": 365,
                 "guard_report_path": "reports/test_guard_status.json",
                 "pause_new_entries_on_trigger": True,
                 "close_positions_on_trigger": False,
             },
+            "forward_test": {"strategy": "trend_following"},
+            "runtime": {"write_heartbeat": False, "heartbeat_path": "reports/test_runtime_status.json"},
         }
         self.symbol_cfg = {
             "point": 0.01,
@@ -80,6 +83,16 @@ class EngineIntegrationTests(unittest.TestCase):
         connector.get_symbol_tick.return_value = type("Tick", (), {"ask": 2630.0, "bid": 2629.8})()
         connector.get_positions.return_value = []
         connector.send_order.return_value = {"retcode": 10009}
+        connector.get_strategy_closed_trades.return_value = pd.DataFrame(
+            [
+                {
+                    "time": pd.Timestamp("2026-01-01T00:00:00Z"),
+                    "strategy": "trend_following",
+                    "pnl": 10.0,
+                    "balance": 10010.0,
+                }
+            ]
+        )
         return connector
 
     def test_engine_executes_signal(self) -> None:
