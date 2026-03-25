@@ -1,10 +1,15 @@
 # Gold Trading Bot
 
-Python trading bot structure for XAUUSD on MetaTrader 5 with three strategy modules:
+Python trading bot structure for XAUUSD on MetaTrader 5.
 
-- `trend_following`: EMA50/200 + RSI14 cross + ATR14 stop.
-- `scalping_smc`: M5 London-NY overlap breakout using Bollinger squeeze, MACD momentum, volume burst, and a simple fair-value-gap proxy.
-- `linear_grid`: bounded H4 supply-demand grid with ATR-based spacing and global TP.
+Current operational default:
+
+- `trend_following`: enabled and tuned from 12-month backtest plus out-of-sample validation
+
+Research-only modules:
+
+- `scalping_smc`: disabled by default
+- `linear_grid`: disabled by default
 
 The project now also includes:
 
@@ -106,6 +111,18 @@ Run a 12-month in-sample / out-of-sample check for the trend strategy:
 python scripts/run_trend_oos_analysis.py --symbol XAUUSD --days 365 --split-ratio 0.7
 ```
 
+Run trend parameter tuning:
+
+```bash
+python scripts/run_trend_grid_search.py --symbol XAUUSD --days 365 --split-ratio 0.7 --fast-emas 34,50 --slow-emas 150,200 --buy-levels 35,40 --sell-levels 60,65 --atr-multipliers 1.2,1.5 --rr-values 1.5,2.0 --top 8
+```
+
+Create a forward-test report from exported trades:
+
+```bash
+python scripts/run_forward_test_report.py --trades-csv=reports/trend_following_365d_trades.csv --strategy=trend_following
+```
+
 ## Backtest data
 
 The backtester consumes a CSV with:
@@ -126,3 +143,4 @@ A synthetic starter dataset is included at `data/xauusd_m5.csv` so the backteste
 - News filter supports manual config, local JSON, or JSON URL feeds.
 - Add broker-specific checks for `ORDER_FILLING_*`, slippage, and symbol suffixes such as `XAUUSDm`.
 - Backtests export trade-by-trade CSV reports into `reports/` automatically.
+- Use [FORWARD_TEST_CHECKLIST.md](/D:/MASTER/PROJECTS/Algorithmic%20Trading/gold_trading_bot/FORWARD_TEST_CHECKLIST.md) for Demo validation before any live rollout.
