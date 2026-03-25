@@ -46,6 +46,19 @@ def load_config(path: Path) -> dict[str, Any]:
         return yaml.safe_load(handle)
 
 
+def apply_env_overrides(config: dict[str, Any]) -> dict[str, Any]:
+    mt5_cfg = config.setdefault("mt5", {})
+    if os.getenv("MT5_LOGIN"):
+        mt5_cfg["login"] = int(os.getenv("MT5_LOGIN", "0"))
+    if os.getenv("MT5_PASSWORD"):
+        mt5_cfg["password"] = os.getenv("MT5_PASSWORD")
+    if os.getenv("MT5_SERVER"):
+        mt5_cfg["server"] = os.getenv("MT5_SERVER")
+    if os.getenv("MT5_PATH"):
+        mt5_cfg["path"] = os.getenv("MT5_PATH")
+    return config
+
+
 def build_strategies(config: dict[str, Any]) -> dict[str, Any]:
     strategy_map = {
         "trend_following": lambda: TrendFollowing(config["strategies"]["trend_following"]),
@@ -178,7 +191,7 @@ def run_report(report_source: str | None) -> None:
 def main() -> None:
     args = parse_args()
     load_dotenv(ROOT / ".env")
-    config = load_config(Path(args.config))
+    config = apply_env_overrides(load_config(Path(args.config)))
 
     if args.mode == "live":
         if not config["risk"].get("allow_live_trading", False):
