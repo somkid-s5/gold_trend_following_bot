@@ -59,7 +59,7 @@ def apply_env_overrides(config: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
-def build_strategies(config: dict[str, Any]) -> dict[str, Any]:
+def build_strategies(config: dict[str, Any], include_disabled: bool = False) -> dict[str, Any]:
     strategy_map = {
         "trend_following": lambda: TrendFollowing(config["strategies"]["trend_following"]),
         "scalping_smc": lambda: ScalpingSMC(
@@ -70,7 +70,7 @@ def build_strategies(config: dict[str, Any]) -> dict[str, Any]:
     }
     enabled: dict[str, Any] = {}
     for name, factory in strategy_map.items():
-        if config["strategies"][name].get("enabled", True):
+        if include_disabled or config["strategies"][name].get("enabled", True):
             enabled[name] = factory()
     return enabled
 

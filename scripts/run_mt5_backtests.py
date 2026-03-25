@@ -86,7 +86,7 @@ def main() -> None:
 
     config = load_config(Path(args.config))
     logger = setup_logger("mt5_batch_backtest")
-    strategies = build_strategies(config)
+    strategies = build_strategies(config, include_disabled=True)
 
     if not mt5.initialize(path=path, login=login, password=password, server=server, timeout=60_000):
         raise SystemExit(f"MT5 initialize failed: {mt5.last_error()}")
