@@ -30,14 +30,19 @@ def load_config(path: Path) -> dict[str, Any]:
 
 
 def build_strategies(config: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "trend_following": TrendFollowing(config["strategies"]["trend_following"]),
-        "scalping_smc": ScalpingSMC(
+    strategy_map = {
+        "trend_following": lambda: TrendFollowing(config["strategies"]["trend_following"]),
+        "scalping_smc": lambda: ScalpingSMC(
             config["strategies"]["scalping_smc"],
             config["sessions"]["london_ny_overlap"],
         ),
-        "linear_grid": LinearGrid(config["strategies"]["linear_grid"]),
+        "linear_grid": lambda: LinearGrid(config["strategies"]["linear_grid"]),
     }
+    enabled: dict[str, Any] = {}
+    for name, factory in strategy_map.items():
+        if config["strategies"][name].get("enabled", True):
+            enabled[name] = factory()
+    return enabled
 
 
 def parse_args() -> argparse.Namespace:

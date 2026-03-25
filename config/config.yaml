@@ -58,7 +58,7 @@ strategies:
     atr_sl_multiplier: 1.2
     take_profit_rr: 2.0
   scalping_smc:
-    enabled: true
+    enabled: false
     timeframe: "M5"
     bb_period: 20
     bb_std: 2.0
@@ -70,7 +70,7 @@ strategies:
     atr_sl_multiplier: 1.2
     take_profit_rr: 1.5
   linear_grid:
-    enabled: true
+    enabled: false
     timeframe: "H4"
     atr_period: 14
     grid_levels: 3
@@ -95,3 +95,9 @@ backtest:
   fee_per_lot: 7.0
   slippage_points: 5
   csv_path: "data/xauusd_h1.csv"
+
+forward_test:
+  strategy: "trend_following"
+  review_time_utc: "21:00"
+  minimum_days: 14
+  target_trades_per_week: 3
