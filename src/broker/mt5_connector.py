@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
+import time
 from typing import Any
 
 import pandas as pd
@@ -113,31 +114,91 @@ class MT5Connector:
         tp: float,
         comment: str = "",
     ) -> dict[str, Any]:
-        tick = self.get_symbol_tick(symbol)
+        symbol_info = self.get_symbol_info(symbol)
         order_type = mt5.ORDER_TYPE_BUY if action.upper() == "BUY" else mt5.ORDER_TYPE_SELL
-        price = tick.ask if action.upper() == "BUY" else tick.bid
-        request = {
-            "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": symbol,
-            "volume": volume,
-            "type": order_type,
-            "price": price,
-            "sl": sl,
-            "tp": tp,
-            "deviation": self.config.get("deviation", 20),
-            "magic": self.config.get("magic_number", 0),
-            "comment": comment,
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
-        }
-        result = mt5.order_send(request)
-        if result is None:
-            code, message = mt5.last_error()
+        retries = max(int(self.config.get("order_retries", 2)), 0)
+        retry_delay = max(float(self.config.get("retry_delay_ms", 1500)), 0.0) / 1000.0
+
+        filling_modes = self._candidate_filling_modes(symbol_info)
+        last_payload: dict[str, Any] | None = None
+        last_error: tuple[int, str] | None = None
+
+        for filling_mode in filling_modes:
+            for attempt in range(retries + 1):
+                tick = self.get_symbol_tick(symbol)
+                price = tick.ask if action.upper() == "BUY" else tick.bid
+                request = {
+                    "action": mt5.TRADE_ACTION_DEAL,
+                    "symbol": symbol,
+                    "volume": volume,
+                    "type": order_type,
+                    "price": price,
+                    "sl": sl,
+                    "tp": tp,
+                    "deviation": self.config.get("deviation", 20),
+                    "magic": self.config.get("magic_number", 0),
+                    "comment": comment,
+                    "type_time": mt5.ORDER_TIME_GTC,
+                    "type_filling": filling_mode,
+                }
+                result = mt5.order_send(request)
+                if result is None:
+                    last_error = mt5.last_error()
+                    if attempt < retries:
+                        time.sleep(retry_delay)
+                        continue
+                    break
+
+                payload = result._asdict()
+                last_payload = payload
+                retcode = int(payload.get("retcode", -1))
+                if retcode == mt5.TRADE_RETCODE_DONE:
+                    return payload
+
+                if self._is_fill_mode_error(retcode):
+                    break
+                if self._is_retryable_retcode(retcode) and attempt < retries:
+                    time.sleep(retry_delay)
+                    continue
+                break
+
+        if last_payload is not None:
+            raise RuntimeError(f"Order rejected: {last_payload}")
+        if last_error is not None:
+            code, message = last_error
             raise RuntimeError(f"order_send failed: {code} {message}")
-        payload = result._asdict()
-        if payload["retcode"] != mt5.TRADE_RETCODE_DONE:
-            raise RuntimeError(f"Order rejected: {payload}")
-        return payload
+        raise RuntimeError("order_send failed with no payload returned")
+
+    def _candidate_filling_modes(self, symbol_info: Any) -> list[int]:
+        preferred = getattr(symbol_info, "filling_mode", None)
+        fallbacks = [
+            preferred,
+            getattr(mt5, "ORDER_FILLING_IOC", None),
+            getattr(mt5, "ORDER_FILLING_RETURN", None),
+            getattr(mt5, "ORDER_FILLING_FOK", None),
+        ]
+        unique: list[int] = []
+        for mode in fallbacks:
+            if mode is None or mode in unique:
+                continue
+            unique.append(int(mode))
+        return unique or [getattr(mt5, "ORDER_FILLING_IOC", 1)]
+
+    def _is_retryable_retcode(self, retcode: int) -> bool:
+        retryable = {
+            getattr(mt5, "TRADE_RETCODE_TIMEOUT", 10012),
+            getattr(mt5, "TRADE_RETCODE_REQUOTE", 10004),
+            getattr(mt5, "TRADE_RETCODE_PRICE_CHANGED", 10020),
+            getattr(mt5, "TRADE_RETCODE_PRICE_OFF", 10021),
+            getattr(mt5, "TRADE_RETCODE_CONNECTION", 10031),
+        }
+        return retcode in retryable
+
+    def _is_fill_mode_error(self, retcode: int) -> bool:
+        fill_errors = {
+            getattr(mt5, "TRADE_RETCODE_INVALID_FILL", 10030),
+        }
+        return retcode in fill_errors
 
     def modify_position(self, ticket: int, sl: float | None = None, tp: float | None = None) -> dict[str, Any]:
         position = mt5.positions_get(ticket=ticket)

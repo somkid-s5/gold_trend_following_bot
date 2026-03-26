@@ -4,6 +4,8 @@ mt5:
   server: "YourBroker-Demo"
   path: null
   timeout: 60000
+  order_retries: 2
+  retry_delay_ms: 1500
   magic_number: 260324
   deviation: 20
 
