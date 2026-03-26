@@ -49,6 +49,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--days", type=int, default=180)
     parser.add_argument("--split-ratio", type=float, default=0.7, help="Fraction used for in-sample period")
     parser.add_argument("--data-csv", default=None, help="Optional cached M5 CSV to skip MT5 download")
+    parser.add_argument("--trade-mode", choices=["both", "buy_only", "sell_only"], default="buy_only")
+    parser.add_argument("--require-fvg", choices=["true", "false"], default="false")
+    parser.add_argument("--squeeze-quantile", type=float, default=0.35)
     parser.add_argument("--config", default=str(ROOT / "config" / "config.yaml"))
     return parser.parse_args()
 
@@ -121,6 +124,11 @@ def run_backtest(frame: pd.DataFrame, config: dict[str, Any], logger_name: str) 
     return result
 
 
+def apply_trade_mode(strategy_config: dict[str, Any], trade_mode: str) -> None:
+    strategy_config["allow_long"] = trade_mode in {"both", "buy_only"}
+    strategy_config["allow_short"] = trade_mode in {"both", "sell_only"}
+
+
 def main() -> None:
     args = parse_args()
     load_dotenv(ROOT / ".env")
@@ -129,6 +137,10 @@ def main() -> None:
     end = datetime.now(timezone.utc)
 
     config = load_config(Path(args.config))
+    strategy_config = config["strategies"]["scalping_smc"]
+    apply_trade_mode(strategy_config, args.trade_mode)
+    strategy_config["require_fvg"] = args.require_fvg.lower() == "true"
+    strategy_config["squeeze_quantile"] = float(args.squeeze_quantile)
     logger = setup_logger("scalping_oos_analysis")
 
     if args.data_csv:
@@ -161,6 +173,9 @@ def main() -> None:
         "strategy": "scalping_smc",
         "days": args.days,
         "split_ratio": args.split_ratio,
+        "trade_mode": args.trade_mode,
+        "require_fvg": strategy_config["require_fvg"],
+        "squeeze_quantile": strategy_config["squeeze_quantile"],
         "in_sample": {
             "bars": len(in_sample),
             "start": in_sample["time"].min().isoformat(),

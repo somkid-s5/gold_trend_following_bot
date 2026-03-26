@@ -49,6 +49,14 @@ def parse_list(raw: str) -> list[float]:
     return [float(item.strip()) for item in raw.split(",") if item.strip()]
 
 
+def parse_bool_list(raw: str) -> list[bool]:
+    return [item.strip().lower() == "true" for item in raw.split(",") if item.strip()]
+
+
+def parse_text_list(raw: str) -> list[str]:
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Grid search scalping_smc on MT5 history")
     parser.add_argument("--symbol", default="XAUUSD")
@@ -60,6 +68,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trend-slow-emas", default="150,200")
     parser.add_argument("--min-volume-ratios", default="1.0,1.15,1.3")
     parser.add_argument("--breakout-atr-fractions", default="0.1,0.15,0.2")
+    parser.add_argument("--squeeze-quantiles", default="0.25,0.35")
+    parser.add_argument("--require-fvg-values", default="false,true")
+    parser.add_argument("--trade-modes", default="buy_only,both")
     parser.add_argument("--atr-multipliers", default="0.8,1.0,1.2")
     parser.add_argument("--rr-values", default="1.5,2.0,2.5")
     parser.add_argument("--max-combos", type=int, default=0, help="Limit number of combinations for faster exploratory runs")
@@ -119,6 +130,11 @@ def run_backtest(frame: pd.DataFrame, config: dict[str, Any], strategy_config: d
     return result
 
 
+def apply_trade_mode(strategy_config: dict[str, Any], trade_mode: str) -> None:
+    strategy_config["allow_long"] = trade_mode in {"both", "buy_only"}
+    strategy_config["allow_short"] = trade_mode in {"both", "sell_only"}
+
+
 def main() -> None:
     args = parse_args()
     load_dotenv(ROOT / ".env")
@@ -156,6 +172,9 @@ def main() -> None:
     trend_slow_emas = [int(value) for value in parse_list(args.trend_slow_emas)]
     min_volume_ratios = parse_list(args.min_volume_ratios)
     breakout_atr_fractions = parse_list(args.breakout_atr_fractions)
+    squeeze_quantiles = parse_list(args.squeeze_quantiles)
+    require_fvg_values = parse_bool_list(args.require_fvg_values)
+    trade_modes = parse_text_list(args.trade_modes)
     atr_multipliers = parse_list(args.atr_multipliers)
     rr_values = parse_list(args.rr_values)
 
@@ -166,6 +185,9 @@ def main() -> None:
             trend_slow_emas,
             min_volume_ratios,
             breakout_atr_fractions,
+            squeeze_quantiles,
+            require_fvg_values,
+            trade_modes,
             atr_multipliers,
             rr_values,
         )
@@ -180,6 +202,9 @@ def main() -> None:
         trend_slow_ema,
         min_volume_ratio,
         breakout_atr_fraction,
+        squeeze_quantile,
+        require_fvg,
+        trade_mode,
         atr_multiplier,
         rr_value,
     ) in enumerate(combinations, start=1):
@@ -194,10 +219,13 @@ def main() -> None:
                 "trend_slow_ema": trend_slow_ema,
                 "min_volume_ratio": min_volume_ratio,
                 "breakout_atr_fraction": breakout_atr_fraction,
+                "squeeze_quantile": squeeze_quantile,
+                "require_fvg": require_fvg,
                 "atr_sl_multiplier": atr_multiplier,
                 "take_profit_rr": rr_value,
             }
         )
+        apply_trade_mode(strategy_config, trade_mode)
 
         in_result = run_backtest(in_sample, config, strategy_config, "scalping_grid_in_sample")
         out_result = run_backtest(out_of_sample, config, strategy_config, "scalping_grid_out_sample")
@@ -210,6 +238,9 @@ def main() -> None:
             "trend_slow_ema": trend_slow_ema,
             "min_volume_ratio": min_volume_ratio,
             "breakout_atr_fraction": breakout_atr_fraction,
+            "squeeze_quantile": squeeze_quantile,
+            "require_fvg": require_fvg,
+            "trade_mode": trade_mode,
             "atr_sl_multiplier": atr_multiplier,
             "take_profit_rr": rr_value,
             "in_net_profit": round(in_result["net_profit"], 2),

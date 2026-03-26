@@ -59,7 +59,7 @@ class ScalpingSMC:
         if not self._within_session(last["time"]):
             return []
 
-        squeeze_threshold = data["bb_width"].rolling(50).quantile(0.2).iloc[-1]
+        squeeze_threshold = data["bb_width"].rolling(50).quantile(float(self.config.get("squeeze_quantile", 0.2))).iloc[-1]
         if pd.isna(squeeze_threshold):
             return []
 
@@ -67,6 +67,9 @@ class ScalpingSMC:
         volume_burst = volume_ratio >= float(self.config.get("min_volume_ratio", 1.15))
         bullish_fvg = self._find_fvg_bias(data.iloc[:-1]) == "BUY"
         bearish_fvg = self._find_fvg_bias(data.iloc[:-1]) == "SELL"
+        require_fvg = bool(self.config.get("require_fvg", True))
+        allow_long = bool(self.config.get("allow_long", True))
+        allow_short = bool(self.config.get("allow_short", True))
         atr_value = float(last["atr"])
         if atr_value <= 0:
             return []
@@ -85,6 +88,8 @@ class ScalpingSMC:
         breakout_down = prev["close"] >= prev["bb_lower"] and last["close"] < last["bb_lower"]
 
         if (
+            allow_long
+            and
             float(last["bb_width"]) <= float(squeeze_threshold)
             and breakout_up
             and trend_up
@@ -92,7 +97,7 @@ class ScalpingSMC:
             and float(last["macd_hist"]) > 0
             and macd_accel_up
             and breakout_distance_up >= min_breakout
-            and bullish_fvg
+            and (bullish_fvg or not require_fvg)
         ):
             entry = float(last["close"])
             signals.append(
@@ -103,11 +108,13 @@ class ScalpingSMC:
                     sl=entry - sl_distance,
                     tp=entry + (sl_distance * rr),
                     confidence=0.72,
-                    metadata={"atr": atr_value},
+                    metadata={"atr": atr_value, "volume_ratio": volume_ratio},
                 )
             )
 
         if (
+            allow_short
+            and
             float(last["bb_width"]) <= float(squeeze_threshold)
             and breakout_down
             and trend_down
@@ -115,7 +122,7 @@ class ScalpingSMC:
             and float(last["macd_hist"]) < 0
             and macd_accel_down
             and breakout_distance_down >= min_breakout
-            and bearish_fvg
+            and (bearish_fvg or not require_fvg)
         ):
             entry = float(last["close"])
             signals.append(
