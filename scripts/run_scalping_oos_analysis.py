@@ -48,6 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--symbol", default="XAUUSD")
     parser.add_argument("--days", type=int, default=180)
     parser.add_argument("--split-ratio", type=float, default=0.7, help="Fraction used for in-sample period")
+    parser.add_argument("--data-csv", default=None, help="Optional cached M5 CSV to skip MT5 download")
     parser.add_argument("--config", default=str(ROOT / "config" / "config.yaml"))
     return parser.parse_args()
 
@@ -59,6 +60,12 @@ def fetch_frame(symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
     frame = pd.DataFrame(rates)
     frame["time"] = pd.to_datetime(frame["time"], unit="s", utc=True)
     frame.rename(columns={"tick_volume": "volume"}, inplace=True)
+    return frame[["time", "open", "high", "low", "close", "volume"]]
+
+
+def load_cached_frame(csv_path: str | Path) -> pd.DataFrame:
+    frame = pd.read_csv(csv_path)
+    frame["time"] = pd.to_datetime(frame["time"], utc=True)
     return frame[["time", "open", "high", "low", "close", "volume"]]
 
 
@@ -118,26 +125,30 @@ def main() -> None:
     args = parse_args()
     load_dotenv(ROOT / ".env")
 
-    login = int(require_env("MT5_LOGIN"))
-    password = require_env("MT5_PASSWORD")
-    server = require_env("MT5_SERVER")
-    path = require_env("MT5_PATH")
-
     start = datetime.now(timezone.utc) - timedelta(days=args.days)
     end = datetime.now(timezone.utc)
 
     config = load_config(Path(args.config))
     logger = setup_logger("scalping_oos_analysis")
 
-    if not mt5.initialize(path=path, login=login, password=password, server=server, timeout=60_000):
-        raise SystemExit(f"MT5 initialize failed: {mt5.last_error()}")
+    if args.data_csv:
+        frame = load_cached_frame(args.data_csv)
+        logger.info("Loaded cached data from %s", args.data_csv)
+    else:
+        login = int(require_env("MT5_LOGIN"))
+        password = require_env("MT5_PASSWORD")
+        server = require_env("MT5_SERVER")
+        path = require_env("MT5_PATH")
 
-    try:
-        if not mt5.symbol_select(args.symbol, True):
-            raise RuntimeError(f"Unable to select symbol {args.symbol}: {mt5.last_error()}")
-        frame = fetch_frame(args.symbol, start, end)
-    finally:
-        mt5.shutdown()
+        if not mt5.initialize(path=path, login=login, password=password, server=server, timeout=60_000):
+            raise SystemExit(f"MT5 initialize failed: {mt5.last_error()}")
+
+        try:
+            if not mt5.symbol_select(args.symbol, True):
+                raise RuntimeError(f"Unable to select symbol {args.symbol}: {mt5.last_error()}")
+            frame = fetch_frame(args.symbol, start, end)
+        finally:
+            mt5.shutdown()
 
     split_index = int(len(frame) * args.split_ratio)
     in_sample = frame.iloc[:split_index].reset_index(drop=True)
