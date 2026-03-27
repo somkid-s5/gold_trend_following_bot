@@ -64,6 +64,12 @@ class StrategyTests(unittest.TestCase):
                 "zone_lookback": 30,
                 "take_profit_atr_multiplier": 1.2,
                 "max_positions": 3,
+                "trend_fast_ema": 8,
+                "trend_slow_ema": 20,
+                "require_trend_alignment": False,
+                "zone_buffer_atr": 1.0,
+                "allow_long": True,
+                "allow_short": False,
             }
         )
         signals = strategy.generate_signals(frame, {"existing_positions": 0, "daily_drawdown_pct": 0.0, "max_daily_loss_pct": 3.0})
