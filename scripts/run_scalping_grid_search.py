@@ -89,10 +89,15 @@ def fetch_frame(symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
     return frame[["time", "open", "high", "low", "close", "volume"]]
 
 
-def load_cached_frame(csv_path: str | Path) -> pd.DataFrame:
+def load_cached_frame(csv_path: str | Path, days: int | None = None) -> pd.DataFrame:
     frame = pd.read_csv(csv_path)
     frame["time"] = pd.to_datetime(frame["time"], utc=True)
-    return frame[["time", "open", "high", "low", "close", "volume"]]
+    frame = frame[["time", "open", "high", "low", "close", "volume"]]
+    if days and not frame.empty:
+        end_time = frame["time"].max()
+        start_time = end_time - timedelta(days=days)
+        frame = frame.loc[frame["time"] >= start_time].reset_index(drop=True)
+    return frame
 
 
 def trade_profit_factor(trades: list[dict[str, Any]]) -> float:
@@ -146,7 +151,7 @@ def main() -> None:
     logger = setup_logger("scalping_grid_search")
 
     if args.data_csv:
-        frame = load_cached_frame(args.data_csv)
+        frame = load_cached_frame(args.data_csv, args.days)
         logger.info("Loaded cached data from %s", args.data_csv)
     else:
         login = int(require_env("MT5_LOGIN"))
