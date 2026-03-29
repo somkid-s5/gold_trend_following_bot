@@ -3,16 +3,12 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-import pandas as pd
-
-from src.strategies.linear_grid import LinearGrid
-from src.strategies.scalping_smc import ScalpingSMC
 from src.strategies.trend_following import TrendFollowing
 
 
-def build_frame(closes: list[float], volume_base: int = 1500) -> pd.DataFrame:
+def build_frame(closes: list[float], volume_base: int = 1500) -> list[dict[str, object]]:
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    rows = []
+    rows: list[dict[str, object]] = []
     previous = closes[0]
     for index, close in enumerate(closes):
         open_price = previous
@@ -29,13 +25,15 @@ def build_frame(closes: list[float], volume_base: int = 1500) -> pd.DataFrame:
             }
         )
         previous = close
-    return pd.DataFrame(rows)
+    return rows
 
 
-class StrategyTests(unittest.TestCase):
+class TrendFollowingStrategyTests(unittest.TestCase):
     def test_trend_following_generates_buy_signal(self) -> None:
+        import pandas as pd
+
         closes = [1800 + i * 0.6 for i in range(205)] + [1918, 1912, 1908, 1904, 1912]
-        frame = build_frame(closes)
+        frame = pd.DataFrame(build_frame(closes))
         strategy = TrendFollowing(
             {
                 "timeframe": "H1",
@@ -51,59 +49,6 @@ class StrategyTests(unittest.TestCase):
         )
         signals = strategy.generate_signals(frame)
         self.assertTrue(any(signal.action == "BUY" for signal in signals))
-
-    def test_linear_grid_generates_signal_near_zone(self) -> None:
-        closes = [2500 + (i % 5) * 0.5 for i in range(50)] + [2492.0]
-        frame = build_frame(closes)
-        strategy = LinearGrid(
-            {
-                "timeframe": "H4",
-                "atr_period": 14,
-                "grid_levels": 3,
-                "spacing_atr_multiplier": 0.8,
-                "zone_lookback": 30,
-                "take_profit_atr_multiplier": 1.2,
-                "max_positions": 3,
-                "trend_fast_ema": 8,
-                "trend_slow_ema": 20,
-                "require_trend_alignment": False,
-                "zone_buffer_atr": 1.0,
-                "allow_long": True,
-                "allow_short": False,
-            }
-        )
-        signals = strategy.generate_signals(frame, {"existing_positions": 0, "daily_drawdown_pct": 0.0, "max_daily_loss_pct": 3.0})
-        self.assertGreaterEqual(len(signals), 1)
-
-    def test_scalping_smc_returns_list(self) -> None:
-        closes = [2600 + i * 0.03 for i in range(120)]
-        frame = build_frame(closes, volume_base=2000)
-        frame["time"] = pd.date_range("2026-01-01 12:00:00+00:00", periods=len(frame), freq="5min")
-        strategy = ScalpingSMC(
-            {
-                "timeframe": "M5",
-                "bb_period": 20,
-                "bb_std": 1.8,
-                "trend_fast_ema": 34,
-                "trend_slow_ema": 150,
-                "macd_fast": 12,
-                "macd_slow": 26,
-                "macd_signal": 9,
-                "volume_window": 20,
-                "min_volume_ratio": 1.0,
-                "breakout_atr_fraction": 0.1,
-                "squeeze_quantile": 0.35,
-                "atr_period": 14,
-                "atr_sl_multiplier": 0.8,
-                "take_profit_rr": 2.0,
-                "require_fvg": False,
-                "allow_long": True,
-                "allow_short": False,
-            },
-            {"start_utc": "12:00", "end_utc": "16:00"},
-        )
-        signals = strategy.generate_signals(frame)
-        self.assertIsInstance(signals, list)
 
 
 if __name__ == "__main__":

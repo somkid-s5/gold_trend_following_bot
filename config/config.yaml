@@ -16,8 +16,6 @@ trading:
   reconnect_seconds: 15
   history_bars:
     trend_following: 400
-    scalping_smc: 300
-    linear_grid: 500
 
 risk:
   risk_per_trade_pct: 1.0
@@ -28,16 +26,9 @@ risk:
   allow_live_trading: true
   allow_strategy_addons:
     trend_following: 1
-    scalping_smc: 1
-    linear_grid: 3
   breakeven_rr_trigger: 1.0
   trailing_stop_atr_multiple: 1.0
   close_all_on_daily_limit: true
-
-sessions:
-  london_ny_overlap:
-    start_utc: "12:00"
-    end_utc: "16:00"
 
 symbols:
   XAUUSD:
@@ -59,47 +50,12 @@ strategies:
     atr_period: 14
     atr_sl_multiplier: 1.2
     take_profit_rr: 2.0
-  scalping_smc:
-    enabled: false
-    timeframe: "M5"
-    bb_period: 20
-    bb_std: 1.8
-    trend_fast_ema: 34
-    trend_slow_ema: 150
-    macd_fast: 12
-    macd_slow: 26
-    macd_signal: 9
-    volume_window: 20
-    min_volume_ratio: 1.0
-    breakout_atr_fraction: 0.1
-    squeeze_quantile: 0.35
-    atr_period: 14
-    atr_sl_multiplier: 0.8
-    take_profit_rr: 2.0
-    require_fvg: false
-    allow_long: true
-    allow_short: false
-  linear_grid:
-    enabled: false
-    timeframe: "H4"
-    atr_period: 14
-    grid_levels: 3
-    spacing_atr_multiplier: 0.8
-    zone_lookback: 30
-    take_profit_atr_multiplier: 1.2
-    max_positions: 3
-    trend_fast_ema: 34
-    trend_slow_ema: 89
-    require_trend_alignment: true
-    zone_buffer_atr: 0.2
-    allow_long: true
-    allow_short: false
 
 news_filter:
   enabled: true
   provider: "manual"
   provider_url: null
-  local_json_path: null
+  local_json_path: "data/news_events.json"
   minutes_before: 45
   minutes_after: 30
   high_impact_events:
