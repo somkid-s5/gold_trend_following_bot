@@ -37,6 +37,12 @@ symbols:
     min_lot: 0.01
     max_lot: 20.0
     lot_step: 0.01
+  BTCUSD:
+    point: 0.01
+    contract_size: 1
+    min_lot: 0.01
+    max_lot: 20.0
+    lot_step: 0.01
 
 strategies:
   trend_following:

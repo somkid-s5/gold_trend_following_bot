@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from main import build_strategies, load_config
+from main import build_strategy, load_config
 from src.risk.risk_manager import RiskManager
 from src.utils.backtester import Backtester
 from src.utils.logger import setup_logger
@@ -47,14 +47,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--symbol", default="XAUUSD")
     parser.add_argument("--days", type=int, default=365)
     parser.add_argument("--split-ratio", type=float, default=0.7, help="Fraction used for in-sample period")
+    parser.add_argument("--timeframe", default="H1", choices=["M1", "M5", "M15", "M30", "H1", "H4", "D1"])
     parser.add_argument("--config", default=str(ROOT / "config" / "config.yaml"))
     return parser.parse_args()
 
 
-def fetch_frame(symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
-    rates = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_H1, start, end)
+def fetch_frame(symbol: str, timeframe_str: str, start: datetime, end: datetime) -> pd.DataFrame:
+    tf_map = {
+        "M1": mt5.TIMEFRAME_M1,
+        "M5": mt5.TIMEFRAME_M5,
+        "M15": mt5.TIMEFRAME_M15,
+        "M30": mt5.TIMEFRAME_M30,
+        "H1": mt5.TIMEFRAME_H1,
+        "H4": mt5.TIMEFRAME_H4,
+        "D1": mt5.TIMEFRAME_D1,
+    }
+    rates = mt5.copy_rates_range(symbol, tf_map[timeframe_str], start, end)
     if rates is None or len(rates) == 0:
-        raise RuntimeError(f"No H1 rates returned for {symbol}: {mt5.last_error()}")
+        raise RuntimeError(f"No {timeframe_str} rates returned for {symbol}: {mt5.last_error()}")
     frame = pd.DataFrame(rates)
     frame["time"] = pd.to_datetime(frame["time"], unit="s", utc=True)
     frame.rename(columns={"tick_volume": "volume"}, inplace=True)
@@ -73,7 +83,7 @@ def summarize_monthly(trades: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def run_backtest(frame: pd.DataFrame, config: dict[str, Any], logger_name: str) -> dict[str, Any]:
     logger = setup_logger(logger_name)
-    strategy = build_strategies(config)["trend_following"]
+    strategy = build_strategy(config)
     risk_manager = RiskManager(config["risk"], config["symbols"]["XAUUSD"])
     backtester = Backtester(strategy, risk_manager, config, logger)
     return backtester.run(frame, float(config["backtest"]["initial_balance"]))
@@ -100,7 +110,7 @@ def main() -> None:
     try:
         if not mt5.symbol_select(args.symbol, True):
             raise RuntimeError(f"Unable to select symbol {args.symbol}: {mt5.last_error()}")
-        frame = fetch_frame(args.symbol, start, end)
+        frame = fetch_frame(args.symbol, args.timeframe, start, end)
     finally:
         mt5.shutdown()
 
@@ -113,6 +123,7 @@ def main() -> None:
 
     payload = {
         "strategy": "trend_following",
+        "timeframe": args.timeframe,
         "days": args.days,
         "split_ratio": args.split_ratio,
         "in_sample": {

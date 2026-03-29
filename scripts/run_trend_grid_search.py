@@ -61,14 +61,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--atr-multipliers", default="1.2,1.5,1.8")
     parser.add_argument("--rr-values", default="1.5,2.0,2.5")
     parser.add_argument("--top", type=int, default=10)
+    parser.add_argument("--timeframe", default="H1", choices=["M1", "M5", "M15", "M30", "H1", "H4", "D1"])
     parser.add_argument("--config", default=str(ROOT / "config" / "config.yaml"))
     return parser.parse_args()
 
 
-def fetch_frame(symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
-    rates = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_H1, start, end)
+def fetch_frame(symbol: str, timeframe_str: str, start: datetime, end: datetime) -> pd.DataFrame:
+    tf_map = {
+        "M1": mt5.TIMEFRAME_M1,
+        "M5": mt5.TIMEFRAME_M5,
+        "M15": mt5.TIMEFRAME_M15,
+        "M30": mt5.TIMEFRAME_M30,
+        "H1": mt5.TIMEFRAME_H1,
+        "H4": mt5.TIMEFRAME_H4,
+        "D1": mt5.TIMEFRAME_D1,
+    }
+    rates = mt5.copy_rates_range(symbol, tf_map[timeframe_str], start, end)
     if rates is None or len(rates) == 0:
-        raise RuntimeError(f"No H1 rates returned for {symbol}: {mt5.last_error()}")
+        raise RuntimeError(f"No {timeframe_str} rates returned for {symbol}: {mt5.last_error()}")
     frame = pd.DataFrame(rates)
     frame["time"] = pd.to_datetime(frame["time"], unit="s", utc=True)
     frame.rename(columns={"tick_volume": "volume"}, inplace=True)
@@ -115,7 +125,7 @@ def main() -> None:
     try:
         if not mt5.symbol_select(args.symbol, True):
             raise RuntimeError(f"Unable to select symbol {args.symbol}: {mt5.last_error()}")
-        frame = fetch_frame(args.symbol, start, end)
+        frame = fetch_frame(args.symbol, args.timeframe, start, end)
     finally:
         mt5.shutdown()
 
