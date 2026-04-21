@@ -255,6 +255,7 @@ class TradingEngine:
             sl_distance_price=sl_distance,
             tick_size=float(symbol_info.trade_tick_size or symbol_info.point),
             tick_value=float(symbol_info.trade_tick_value or (symbol_info.contract_size * symbol_info.point)),
+            confidence_multiplier=signal.confidence,
         )
         result = self.connector.send_order(
             symbol=symbol,
@@ -274,6 +275,14 @@ class TradingEngine:
         balance, equity = self._live_account_state()
         now_utc = datetime.now(timezone.utc)
         results: list[EngineResult] = []
+        
+        # Log Account Dashboard Summary
+        daily_dd = self.risk_manager.daily_drawdown_pct(equity)
+        total_dd = self.risk_manager.total_drawdown_pct(equity)
+        self.logger.info("-" * 50)
+        self.logger.info("ACCOUNT STATUS | Bal: %.2f | Eq: %.2f | DD: %.2f%% (Daily: %.2f%%)", balance, equity, total_dd, daily_dd)
+        self.logger.info("-" * 50)
+
         self._refresh_news_events()
         pause_results = self._check_operational_pause(symbol)
         if pause_results:
@@ -344,6 +353,15 @@ class TradingEngine:
             symbol_info = self.connector.get_symbol_info(symbol)
             tick = self.connector.get_symbol_tick(symbol)
             spread_points = (float(tick.ask) - float(tick.bid)) / float(symbol_info.point or 0.01)
+            
+            existing_positions = self._strategy_positions(symbol, name)
+            max_positions = int(self.config["risk"]["allow_strategy_addons"].get(name, 1))
+            
+            # Log Strategy Context
+            last_close = float(frame["close"].iloc[-1])
+            self.logger.info("SCAN | %s | Price: %.2f | Spread: %.1f | Pos: %d/%d", 
+                             name.upper(), last_close, spread_points, len(existing_positions), max_positions)
+
             decision = self._passes_risk(spread_points, now_utc, equity)
             if not decision.allowed:
                 self.logger.info("Risk filter blocked %s: %s", name, decision.reason)

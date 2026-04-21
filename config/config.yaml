@@ -10,7 +10,7 @@ mt5:
   deviation: 20
 
 trading:
-  symbol: "XAUUSD"
+  symbol: "XAUUSDm"
   timezone: "UTC"
   poll_seconds: 60
   reconnect_seconds: 15
@@ -18,10 +18,10 @@ trading:
     trend_following: 400
 
 risk:
-  risk_per_trade_pct: 1.0
+  risk_per_trade_pct: 2.0
   max_daily_loss_pct: 3.0
   max_total_drawdown_pct: 12.0
-  max_spread_points: 30
+  max_spread_points: 500
   min_rr_ratio: 2.0
   allow_live_trading: true
   allow_strategy_addons:
@@ -31,7 +31,7 @@ risk:
   close_all_on_daily_limit: true
 
 symbols:
-  XAUUSD:
+  XAUUSDm:
     point: 0.01
     contract_size: 100
     min_lot: 0.01

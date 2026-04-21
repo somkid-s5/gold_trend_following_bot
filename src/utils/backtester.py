@@ -55,7 +55,7 @@ class Backtester:
         frame.to_csv(path, index=False)
         return path
 
-    def run(self, frame: pd.DataFrame, initial_balance: float) -> dict[str, Any]:
+    def run(self, frame: pd.DataFrame, initial_balance: float, symbol: str = "XAUUSD") -> dict[str, Any]:
         balance = initial_balance
         equity_curve: list[float] = [balance]
         trades: list[BacktestTrade] = []
@@ -71,14 +71,22 @@ class Backtester:
 
             signal = max(signals, key=lambda item: item.confidence)
             next_bar = frame.iloc[index + 1]
-            tick_size = self.config["symbols"]["XAUUSD"]["point"]
-            tick_value = self.config["symbols"]["XAUUSD"]["contract_size"] * tick_size
+            
+            # Use the provided symbol to look up configuration
+            symbol_cfg = self.config["symbols"].get(symbol)
+            if not symbol_cfg:
+                # Fallback to the first symbol if the specific one is missing
+                symbol_cfg = next(iter(self.config["symbols"].values()))
+                
+            tick_size = float(symbol_cfg["point"])
+            tick_value = float(symbol_cfg["contract_size"]) * tick_size
             lot = self.risk_manager.calculate_lot(
                 equity=balance,
                 risk_pct=float(self.config["risk"]["risk_per_trade_pct"]),
                 sl_distance_price=abs(signal.entry - signal.sl),
                 tick_size=tick_size,
                 tick_value=tick_value,
+                confidence_multiplier=signal.confidence,
             )
 
             exit_price = float(next_bar["close"])

@@ -26,14 +26,21 @@ def load_dotenv(dotenv_path: Path) -> None:
         return
     for raw_line in dotenv_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+        if not line or "=" not in line:
             continue
+        
+        # Split only on the first '='
         key, value = line.split("=", 1)
         key = key.strip()
+        
+        # If the key itself starts with #, it's a comment
+        if key.startswith("#"):
+            continue
+            
+        # Clean up quotes around the value
         value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = value
 
+        os.environ[key] = value
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run MT5 backtests using live broker history")
@@ -95,7 +102,7 @@ def main() -> None:
 
         risk_manager = RiskManager(config["risk"], config["symbols"][args.symbol])
         backtester = Backtester(strategy, risk_manager, config, logger)
-        result = backtester.run(frame, float(config["backtest"]["initial_balance"]))
+        result = backtester.run(frame, float(config["backtest"]["initial_balance"]), symbol=args.symbol)
         trades_path = reports_dir / f"trend_following_{args.days}d_trades.csv"
         backtester.export_trades(result["trades"], trades_path)
     finally:

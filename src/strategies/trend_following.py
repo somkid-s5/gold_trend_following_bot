@@ -38,6 +38,18 @@ class TrendFollowing:
 
         if last["ema_fast"] > last["ema_slow"] and prev["rsi"] < buy_level <= last["rsi"]:
             entry = float(last["close"])
+            # Super Aggressive Confidence: base starts higher, and scaling is steeper
+            # RSI factor: how fast it crossed buy_level
+            rsi_factor = (last["rsi"] - prev["rsi"]) / 5.0 + 1.0
+            # EMA Gap widening factor: current gap vs previous gap
+            ema_gap = last["ema_fast"] - last["ema_slow"]
+            prev_ema_gap = prev["ema_fast"] - prev["ema_slow"]
+            gap_factor = (ema_gap / prev_ema_gap) if prev_ema_gap > 0 else 1.0
+            
+            confidence = round(rsi_factor * gap_factor * 1.5, 2)
+            # Clip between 0.5 (min risk 1%) and 5.0 (max risk 10%)
+            confidence = max(0.5, min(5.0, confidence))
+            
             signals.append(
                 Signal(
                     strategy=self.name,
@@ -45,13 +57,22 @@ class TrendFollowing:
                     entry=entry,
                     sl=entry - sl_distance,
                     tp=entry + (sl_distance * rr),
-                    confidence=0.8,
-                    metadata={"atr": atr_value},
+                    confidence=confidence,
+                    metadata={"atr": atr_value, "rsi": last["rsi"]},
                 )
             )
 
         if last["ema_fast"] < last["ema_slow"] and prev["rsi"] > sell_level >= last["rsi"]:
             entry = float(last["close"])
+            # Super Aggressive Confidence
+            rsi_factor = (prev["rsi"] - last["rsi"]) / 5.0 + 1.0
+            ema_gap = last["ema_slow"] - last["ema_fast"]
+            prev_ema_gap = prev["ema_slow"] - prev["ema_fast"]
+            gap_factor = (ema_gap / prev_ema_gap) if prev_ema_gap > 0 else 1.0
+            
+            confidence = round(rsi_factor * gap_factor * 1.5, 2)
+            confidence = max(0.5, min(5.0, confidence))
+            
             signals.append(
                 Signal(
                     strategy=self.name,
@@ -59,8 +80,8 @@ class TrendFollowing:
                     entry=entry,
                     sl=entry + sl_distance,
                     tp=entry - (sl_distance * rr),
-                    confidence=0.8,
-                    metadata={"atr": atr_value},
+                    confidence=confidence,
+                    metadata={"atr": atr_value, "rsi": last["rsi"]},
                 )
             )
 

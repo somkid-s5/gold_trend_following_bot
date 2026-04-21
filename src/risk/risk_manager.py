@@ -37,11 +37,15 @@ class RiskManager:
         sl_distance_price: float,
         tick_size: float | None = None,
         tick_value: float | None = None,
+        confidence_multiplier: float = 1.0,
     ) -> float:
         if sl_distance_price <= 0:
             raise ValueError("sl_distance_price must be positive")
 
-        risk_amount = equity * (risk_pct / 100)
+        # Scale risk based on confidence, but cap it for safety (e.g. max 10% risk per trade or 5x base risk)
+        effective_risk_pct = risk_pct * max(0.5, min(5.0, confidence_multiplier))
+        risk_amount = equity * (effective_risk_pct / 100)
+        
         tick_size = tick_size or self.symbol_config.get("point", 0.01)
         tick_value = tick_value or (self.symbol_config.get("contract_size", 100) * tick_size)
         stop_ticks = sl_distance_price / tick_size
