@@ -56,16 +56,19 @@ class TradingEngine:
         
         # Update trade outcomes from history to sync consecutive losses
         strategy_name = self.config.get("forward_test", {}).get("strategy", "trend_following")
-        history = self.connector.get_strategy_closed_trades(
-            symbol=self.config["trading"]["symbol"],
-            strategy_name=strategy_name,
-            lookback_days=1,
-            current_balance=snapshot.balance
-        )
-        if not history.empty:
-            # Sort by time and update outcome for the last trade if not already processed
-            last_trade_pnl = float(history.iloc[-1]["profit"])
-            self.risk_manager.update_trade_outcome(last_trade_pnl)
+        try:
+            history = self.connector.get_strategy_closed_trades(
+                symbol=self.config["trading"]["symbol"],
+                strategy_name=strategy_name,
+                lookback_days=1,
+                current_balance=snapshot.balance
+            )
+            if not history.empty and "pnl" in history.columns:
+                # Sort by time and update outcome for the last trade
+                last_trade_pnl = float(history.iloc[-1]["pnl"])
+                self.risk_manager.update_trade_outcome(last_trade_pnl)
+        except Exception as exc:
+            self.logger.warning("Failed to sync trade history: %s", exc)
 
         return snapshot.balance, snapshot.equity
 
