@@ -287,133 +287,93 @@ class TradingEngine:
         return EngineResult(signal.strategy, "executed", f"{signal.action} {lot} lots")
 
     def run(self, symbol: str, strategy_name: str | None = None) -> list[EngineResult]:
+        """Main execution loop for live trading."""
         if self.mode != "live":
             raise ValueError("TradingEngine.run is for live mode only")
 
-        balance, equity = self._live_account_state()
-        now_utc = datetime.now(timezone.utc)
-        results: list[EngineResult] = []
-        
-        # Log Account Dashboard Summary
-        daily_dd = self.risk_manager.daily_drawdown_pct(equity)
-        total_dd = self.risk_manager.total_drawdown_pct(equity)
-        self.logger.info("-" * 50)
-        self.logger.info("ACCOUNT STATUS | Bal: %.2f | Eq: %.2f | DD: %.2f%% (Daily: %.2f%%)", balance, equity, total_dd, daily_dd)
-        self.logger.info("-" * 50)
+        try:
+            balance, equity = self._live_account_state()
+            now_utc = datetime.now(timezone.utc)
+            results: list[EngineResult] = []
+            
+            # --- PRODUCTION DASHBOARD ---
+            daily_dd = self.risk_manager.daily_drawdown_pct(equity)
+            total_dd = self.risk_manager.total_drawdown_pct(equity)
+            streak = self.risk_manager.consecutive_losses
+            
+            self.logger.info("=" * 60)
+            self.logger.info("LIVE STATUS | %s | %s", symbol.upper(), now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"))
+            self.logger.info("ACCOUNT     | Bal: %.2f | Eq: %.2f | DD: %.2f%%", balance, equity, total_dd)
+            self.logger.info("RISK        | Daily Loss: %.2f%% | Streak: %d", daily_dd, streak)
+            self.logger.info("-" * 60)
 
-        self._refresh_news_events()
-        pause_results = self._check_operational_pause(symbol)
-        if pause_results:
-            self._maybe_send_guard_alert(self._load_guard_payload())
-            self._write_runtime_status(
-                {
-                    "timestamp_utc": now_utc.isoformat(),
-                    "symbol": symbol,
-                    "status": "paused",
-                    "details": [result.details for result in pause_results],
-                    "equity": equity,
-                    "balance": balance,
-                }
-            )
-            return pause_results
+            self._refresh_news_events()
+            
+            # Check for operational pauses (Guards or Circuit Breaker)
+            pause_results = self._check_operational_pause(symbol)
+            if pause_results:
+                self._maybe_send_guard_alert(self._load_guard_payload())
+                self._write_runtime_status({"status": "paused", "equity": equity, "balance": balance})
+                return pause_results
 
-        self._refresh_operational_guard_report(symbol, balance)
-        guard_payload = self._load_guard_payload()
-        self._maybe_send_guard_alert(guard_payload)
-        pause_results = self._check_operational_pause(symbol)
-        if pause_results:
-            self._write_runtime_status(
-                {
-                    "timestamp_utc": now_utc.isoformat(),
-                    "symbol": symbol,
-                    "status": "paused",
-                    "details": [result.details for result in pause_results],
-                    "equity": equity,
-                    "balance": balance,
-                }
-            )
-            return pause_results
+            # Check Global Risk Limits
+            daily_guard = self.risk_manager.check_daily_dd(equity)
+            total_guard = self.risk_manager.check_total_dd(equity)
+            if not daily_guard.allowed or not total_guard.allowed:
+                reason = daily_guard.reason if not daily_guard.allowed else total_guard.reason
+                self.logger.warning("RISK LIMIT BREACHED: %s", reason)
+                if self.config["risk"].get("close_all_on_daily_limit", False):
+                    results.extend(self._close_all_positions(symbol))
+                return results
 
-        daily_guard = self.risk_manager.check_daily_dd(equity)
-        total_guard = self.risk_manager.check_total_dd(equity)
-        if (not daily_guard.allowed or not total_guard.allowed) and self.config["risk"].get("close_all_on_daily_limit", False):
-            self.logger.warning("Risk breach detected. Closing open positions.")
-            results.extend(self._close_all_positions(symbol))
-            reason = daily_guard.reason if not daily_guard.allowed else total_guard.reason
-            results.append(EngineResult("portfolio", "halted", reason))
-            self._write_runtime_status(
-                {
-                    "timestamp_utc": now_utc.isoformat(),
-                    "symbol": symbol,
-                    "status": "halted",
-                    "details": [reason],
-                    "equity": equity,
-                    "balance": balance,
-                }
-            )
+            # Run Strategies
+            for name, strategy in self.strategies.items():
+                if strategy_name and name != strategy_name:
+                    continue
+
+                history_count = int(self.config["trading"]["history_bars"][name])
+                frame = self.data_handler.get_live_bars(symbol, strategy.timeframe, history_count)
+                
+                if not self._is_new_bar(name, frame):
+                    continue
+
+                # Position Management (Trailing SL, etc.)
+                frame_for_management = frame.copy()
+                frame_for_management["atr"] = atr(frame_for_management, 14)
+                results.extend(self._manage_open_positions(symbol, frame_for_management, name))
+
+                # Market Conditions
+                symbol_info = self.connector.get_symbol_info(symbol)
+                tick = self.connector.get_symbol_tick(symbol)
+                spread_points = (float(tick.ask) - float(tick.bid)) / float(symbol_info.point or 0.01)
+                
+                existing_positions = self._strategy_positions(symbol, name)
+                max_pos = int(self.config["risk"]["allow_strategy_addons"].get(name, 1))
+                
+                last_price = float(frame["close"].iloc[-1])
+                self.logger.info("SCANNING    | %s | Price: %.2f | Spr: %.1f | Pos: %d/%d", 
+                                 name.upper(), last_price, spread_points, len(existing_positions), max_pos)
+
+                # Final Risk Check before Signal Generation
+                decision = self._passes_risk(spread_points, now_utc, equity)
+                if not decision.allowed:
+                    self.logger.info("FILTERED    | %s", decision.reason)
+                    continue
+
+                if len(existing_positions) >= max_pos:
+                    continue
+
+                # Signal Execution
+                signals = strategy.generate_signals(frame, {})
+                if signals:
+                    best_signal = max(signals, key=lambda item: item.confidence)
+                    results.append(self._execute_signal(symbol, best_signal, equity))
+                else:
+                    self.logger.info("IDLE        | %s: No signal", name.upper())
+
+            self._write_runtime_status({"status": "running", "equity": equity, "balance": balance})
             return results
 
-        for name, strategy in self.strategies.items():
-            if strategy_name and name != strategy_name:
-                continue
-
-            history = int(self.config["trading"]["history_bars"][name])
-            frame = self.data_handler.get_live_bars(symbol, strategy.timeframe, history)
-            if not self._is_new_bar(name, frame):
-                continue
-
-            frame_for_management = frame.copy()
-            frame_for_management["atr"] = (
-                frame_for_management["high"] - frame_for_management["low"]
-            ).ewm(alpha=1 / 14, adjust=False).mean()
-            results.extend(self._manage_open_positions(symbol, frame_for_management, name))
-
-            symbol_info = self.connector.get_symbol_info(symbol)
-            tick = self.connector.get_symbol_tick(symbol)
-            spread_points = (float(tick.ask) - float(tick.bid)) / float(symbol_info.point or 0.01)
-            
-            existing_positions = self._strategy_positions(symbol, name)
-            max_positions = int(self.config["risk"]["allow_strategy_addons"].get(name, 1))
-            
-            # Log Strategy Context
-            last_close = float(frame["close"].iloc[-1])
-            self.logger.info("SCAN | %s | Price: %.2f | Spread: %.1f | Pos: %d/%d", 
-                             name.upper(), last_close, spread_points, len(existing_positions), max_positions)
-
-            decision = self._passes_risk(spread_points, now_utc, equity)
-            if not decision.allowed:
-                self.logger.info("Risk filter blocked %s: %s", name, decision.reason)
-                results.append(EngineResult(name, "skipped", decision.reason))
-                continue
-
-            existing_positions = self._strategy_positions(symbol, name)
-            max_positions = int(self.config["risk"]["allow_strategy_addons"].get(name, 1))
-            if len(existing_positions) >= max_positions:
-                results.append(EngineResult(name, "skipped", "Max positions reached"))
-                continue
-
-            context = {
-                "existing_positions": len(existing_positions),
-                "daily_drawdown_pct": self.risk_manager.daily_drawdown_pct(equity),
-                "max_daily_loss_pct": float(self.config["risk"]["max_daily_loss_pct"]),
-            }
-            signals = strategy.generate_signals(frame, context)
-            if not signals:
-                results.append(EngineResult(name, "idle", "No signal"))
-                continue
-
-            best_signal = max(signals, key=lambda item: item.confidence)
-            results.append(self._execute_signal(symbol, best_signal, equity))
-
-        self._write_runtime_status(
-            {
-                "timestamp_utc": now_utc.isoformat(),
-                "symbol": symbol,
-                "status": "running",
-                "details": [f"{item.strategy}:{item.status}:{item.details}" for item in results] or ["No new bar or no action"],
-                "equity": equity,
-                "balance": balance,
-            }
-        )
-        self._maybe_send_daily_summary(symbol, balance, equity, now_utc)
-        return results
+        except Exception as exc:
+            self.logger.error("CRITICAL ERROR in Live Loop: %s", exc, exc_info=True)
+            return [EngineResult("system", "error", str(exc))]

@@ -62,22 +62,24 @@ class MT5Connector:
         self.initialized = False
 
     def ensure_symbol(self, symbol: str) -> None:
+        symbol = symbol.upper()
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
-            raise ValueError(f"Symbol {symbol} not found in MT5")
+            raise ValueError(f"Symbol {symbol} not found in MT5 Market Watch")
         if not symbol_info.visible and not mt5.symbol_select(symbol, True):
-            raise RuntimeError(f"Unable to select symbol {symbol}")
+            raise RuntimeError(f"Unable to select symbol {symbol} for trading")
 
     def get_rates(self, symbol: str, timeframe: str, count: int) -> pd.DataFrame:
+        symbol = symbol.upper()
         self.ensure_symbol(symbol)
         rates = mt5.copy_rates_from_pos(symbol, TIMEFRAME_MAP[timeframe], 0, count)
         if rates is None:
             code, message = mt5.last_error()
-            raise RuntimeError(f"copy_rates_from_pos failed: {code} {message}")
+            raise RuntimeError(f"MT5: Failed to fetch {count} bars for {symbol}: [{code}] {message}")
 
         frame = pd.DataFrame(rates)
         if frame.empty:
-            raise ValueError(f"No MT5 bars returned for {symbol} on {timeframe}")
+            raise ValueError(f"MT5: No rates returned for {symbol}")
 
         frame["time"] = pd.to_datetime(frame["time"], unit="s", utc=True)
         frame.rename(columns={"tick_volume": "volume"}, inplace=True)
@@ -114,60 +116,59 @@ class MT5Connector:
         tp: float,
         comment: str = "",
     ) -> dict[str, Any]:
+        symbol = symbol.upper()
         symbol_info = self.get_symbol_info(symbol)
         order_type = mt5.ORDER_TYPE_BUY if action.upper() == "BUY" else mt5.ORDER_TYPE_SELL
-        retries = max(int(self.config.get("order_retries", 2)), 0)
-        retry_delay = max(float(self.config.get("retry_delay_ms", 1500)), 0.0) / 1000.0
+        
+        retries = max(int(self.config.get("order_retries", 3)), 0)
+        retry_delay = max(float(self.config.get("retry_delay_ms", 1000)), 0.0) / 1000.0
 
         filling_modes = self._candidate_filling_modes(symbol_info)
-        last_payload: dict[str, Any] | None = None
-        last_error: tuple[int, str] | None = None
+        last_error_msg = "Order not sent"
 
         for filling_mode in filling_modes:
             for attempt in range(retries + 1):
                 tick = self.get_symbol_tick(symbol)
                 price = tick.ask if action.upper() == "BUY" else tick.bid
+                
                 request = {
                     "action": mt5.TRADE_ACTION_DEAL,
                     "symbol": symbol,
-                    "volume": volume,
+                    "volume": float(volume),
                     "type": order_type,
-                    "price": price,
-                    "sl": sl,
-                    "tp": tp,
-                    "deviation": self.config.get("deviation", 20),
-                    "magic": self.config.get("magic_number", 0),
+                    "price": float(price),
+                    "sl": float(sl),
+                    "tp": float(tp),
+                    "deviation": int(self.config.get("deviation", 20)),
+                    "magic": int(self.config.get("magic_number", 260324)),
                     "comment": comment,
                     "type_time": mt5.ORDER_TIME_GTC,
                     "type_filling": filling_mode,
                 }
+                
                 result = mt5.order_send(request)
                 if result is None:
-                    last_error = mt5.last_error()
+                    code, msg = mt5.last_error()
+                    last_error_msg = f"Internal Error: [{code}] {msg}"
                     if attempt < retries:
                         time.sleep(retry_delay)
                         continue
                     break
 
                 payload = result._asdict()
-                last_payload = payload
                 retcode = int(payload.get("retcode", -1))
                 if retcode == mt5.TRADE_RETCODE_DONE:
                     return payload
 
+                last_error_msg = f"Broker Error [{retcode}]: {payload.get('comment', 'Rejected')}"
                 if self._is_fill_mode_error(retcode):
-                    break
+                    break # Try next filling mode
                 if self._is_retryable_retcode(retcode) and attempt < retries:
                     time.sleep(retry_delay)
                     continue
                 break
 
-        if last_payload is not None:
-            raise RuntimeError(f"Order rejected: {last_payload}")
-        if last_error is not None:
-            code, message = last_error
-            raise RuntimeError(f"order_send failed: {code} {message}")
-        raise RuntimeError("order_send failed with no payload returned")
+        raise RuntimeError(f"MT5 Order Execution Failed for {symbol} {action}: {last_error_msg}")
 
     def _candidate_filling_modes(self, symbol_info: Any) -> list[int]:
         preferred = getattr(symbol_info, "filling_mode", None)

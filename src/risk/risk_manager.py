@@ -55,35 +55,45 @@ class RiskManager:
         tick_value: float | None = None,
         confidence_multiplier: float = 1.0,
     ) -> float:
+        """
+        Calculate trade volume based on equity risk, stop loss distance, and strategy confidence.
+        Uses floor rounding for lot steps to ensure margin safety.
+        """
         if sl_distance_price <= 0:
-            raise ValueError("sl_distance_price must be positive")
+            raise ValueError("Stop loss distance must be positive for lot calculation")
 
-        # Loss Streak Protection: Reduce risk if losing consecutively
-        # 1-2 losses: Normal behavior
-        # 3 losses: Reduce to 50%
-        # 4+ losses: Reduce to 25% (Safety Mode)
+        # Loss Streak Protection: Exponentially reduce risk during losing streaks
         streak_multiplier = 1.0
         if self.consecutive_losses >= 4:
             streak_multiplier = 0.25
         elif self.consecutive_losses >= 3:
-            streak_multiplier = 0.5
+            streak_multiplier = 0.50
 
-        # Scale risk based on confidence, but cap it for safety (e.g. max 10% risk per trade or 5x base risk)
-        effective_risk_pct = risk_pct * max(0.2, min(5.0, confidence_multiplier)) * streak_multiplier
-        risk_amount = equity * (effective_risk_pct / 100)
+        # Scale base risk by strategy confidence and streak protection
+        effective_risk_pct = float(risk_pct) * max(0.2, min(5.0, float(confidence_multiplier))) * streak_multiplier
+        risk_amount = float(equity) * (effective_risk_pct / 100.0)
         
-        tick_size = tick_size or self.symbol_config.get("point", 0.01)
-        tick_value = tick_value or (self.symbol_config.get("contract_size", 100) * tick_size)
+        # Symbol tick parameters
+        tick_size = float(tick_size or self.symbol_config.get("point", 0.01))
+        tick_value = float(tick_value or (self.symbol_config.get("contract_size", 100) * tick_size))
+        
         stop_ticks = sl_distance_price / tick_size
         if stop_ticks <= 0 or tick_value <= 0:
             raise ValueError("Invalid symbol tick information for lot calculation")
 
+        # Raw lot calculation
         raw_lot = risk_amount / (stop_ticks * tick_value)
+        
+        # Constraints from broker
         min_lot = float(self.symbol_config.get("min_lot", 0.01))
         max_lot = float(self.symbol_config.get("max_lot", 100.0))
         step = float(self.symbol_config.get("lot_step", 0.01))
-        stepped = max(min_lot, min(max_lot, round(raw_lot / step) * step))
-        return round(stepped, 2)
+        
+        # Floor rounding to the nearest step for safety (never over-risk)
+        stepped_lot = (raw_lot // step) * step
+        final_lot = max(min_lot, min(max_lot, stepped_lot))
+        
+        return round(final_lot, 2)
 
     def daily_drawdown_pct(self, equity: float) -> float:
         if not self.start_of_day_balance:

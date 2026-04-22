@@ -1,101 +1,58 @@
+# =============================================================================
+# GOLD TREND FOLLOWING BOT - INSTITUTIONAL CONFIGURATION
+# =============================================================================
+
+# MetaTrader 5 Connection Settings
 mt5:
-  login: 0
-  password: "CHANGE_ME"
-  server: "YourBroker-Demo"
-  path: null
+  login: 433209659
+  password: "CHANGE_ME_IN_ENV" # Use .env for security
+  server: "Exness-MT5Trial7"
+  path: "C:\\Program Files\\MetaTrader 5 EXNESS\\terminal64.exe"
   timeout: 60000
-  order_retries: 2
-  retry_delay_ms: 1500
+  order_retries: 3
+  retry_delay_ms: 1000
   magic_number: 260324
   deviation: 20
 
+# Trading Universe & Parameters
 trading:
   symbol: "XAUUSDm"
-  timezone: "UTC"
-  poll_seconds: 60
-  reconnect_seconds: 15
   history_bars:
-    trend_following: 400
+    trend_following: 1500 # Bars needed for D1 EMA simulation
 
+# Risk Management Logic (Dynamic & Adaptive)
 risk:
-  risk_per_trade_pct: 2.0
-  max_daily_loss_pct: 3.0
-  max_total_drawdown_pct: 12.0
-  max_spread_points: 500
-  min_rr_ratio: 2.0
+  risk_per_trade_pct: 2.0      # Base risk when confidence is 1.0
+  max_daily_loss_pct: 3.0      # Stop trading for the day if lost this much
+  max_total_drawdown_pct: 15.0 # Global Circuit Breaker (stops bot)
+  max_spread_points: 500       # Maximum allowed spread for XAUUSD
+  close_all_on_daily_limit: true
   allow_live_trading: true
   allow_strategy_addons:
-    trend_following: 1
-  breakeven_rr_trigger: 1.0
-  trailing_stop_atr_multiple: 1.0
-  close_all_on_daily_limit: true
+    trend_following: 1         # Maximum concurrent positions per strategy
+  breakeven_rr_trigger: 1.0    # Move SL to entry after RR 1.0
+  trailing_stop_atr_multiple: 1.5
 
-symbols:
-  XAUUSDm:
-    point: 0.01
-    contract_size: 100
-    min_lot: 0.01
-    max_lot: 20.0
-    lot_step: 0.01
-  BTCUSD:
-    point: 0.01
-    contract_size: 1
-    min_lot: 0.01
-    max_lot: 20.0
-    lot_step: 0.01
-
+# Strategy Specific Parameters
 strategies:
   trend_following:
-    enabled: true
     timeframe: "H1"
     fast_ema: 34
     slow_ema: 150
     rsi_period: 14
     rsi_buy_level: 40
-    rsi_sell_level: 55
+    rsi_sell_level: 60
     atr_period: 14
-    atr_sl_multiplier: 1.2
+    atr_sl_multiplier: 2.0
     take_profit_rr: 2.0
 
-news_filter:
-  enabled: true
-  provider: "manual"
-  provider_url: null
-  local_json_path: "data/news_events.json"
-  minutes_before: 45
-  minutes_after: 30
-  high_impact_events:
-    - "2026-03-25T12:30:00+00:00"
-    - "2026-03-27T12:30:00+00:00"
-
+# Backtest Environment
 backtest:
   initial_balance: 10000.0
-  fee_per_lot: 7.0
-  slippage_points: 5
-  csv_path: "data/xauusd_h1.csv"
+  fee_per_lot: 0.0 # Commission per round turn
+  start_date: "2016-01-01"
 
-forward_test:
-  strategy: "trend_following"
-  review_time_utc: "21:00"
-  minimum_days: 14
-  target_trades_per_week: 3
-
-operational_guards:
-  enabled: true
-  evaluation_window: 100
-  lookback_days: 365
-  minimum_trades: 20
-  max_consecutive_losses: 6
-  max_drawdown_pct: 5.0
-  min_win_rate_pct: 45.0
-  pause_new_entries_on_trigger: true
-  close_positions_on_trigger: false
-  guard_report_path: "reports/guard_status.json"
-
-runtime:
-  heartbeat_path: "reports/runtime_status.json"
-  write_heartbeat: true
-
+# External Integrations
 notifications:
   telegram:
     enabled: true
@@ -106,5 +63,3 @@ notifications:
     send_guard_alerts: true
     send_startup_alerts: true
     send_shutdown_alerts: true
-    send_error_alerts: true
-    event_cooldown_minutes: 30
