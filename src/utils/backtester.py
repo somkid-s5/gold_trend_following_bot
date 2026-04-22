@@ -61,39 +61,51 @@ class Backtester:
         trades: list[BacktestTrade] = []
         self.risk_manager.update_equity_state(balance, balance)
 
-        warmup = 220
-        for index in range(warmup, len(frame) - 1):
-            window = frame.iloc[: index + 1].copy()
-            signals = self.strategy.generate_signals(window, {})
+        # Performance Turbo: Pre-calculate all indicators once
+        self.logger.info("Preparing data indicators for backtest speedup...")
+        prepared_data = self.strategy.prepare_data(frame)
+        
+        # Determine symbol config
+        symbol_cfg = self.config["symbols"].get(symbol)
+        if not symbol_cfg:
+            symbol_cfg = next(iter(self.config["symbols"].values()))
+        tick_size = float(symbol_cfg["point"])
+        tick_value = float(symbol_cfg["contract_size"]) * tick_size
+        risk_pct = float(self.config["risk"]["risk_per_trade_pct"])
+        fee_per_lot = float(self.config["backtest"]["fee_per_lot"])
+
+        self.logger.info("Starting fast backtest loop...")
+        warmup = 1201 # Increased for D1 filter stability
+        
+        # Pre-slice data to avoid iloc in each iteration for speed
+        rows = [row for _, row in prepared_data.iloc[warmup:].iterrows()]
+        
+        for i in range(len(rows) - 1):
+            current_row = rows[i]
+            next_row = rows[i+1]
+            
+            # Pass a 2-row window to strategy for signal generation (it only looks at these anyway)
+            signals = self.strategy.generate_signals(prepared_data.iloc[warmup + i - 1 : warmup + i + 1], {})
             if not signals:
                 equity_curve.append(balance)
                 continue
 
             signal = max(signals, key=lambda item: item.confidence)
-            next_bar = frame.iloc[index + 1]
             
-            # Use the provided symbol to look up configuration
-            symbol_cfg = self.config["symbols"].get(symbol)
-            if not symbol_cfg:
-                # Fallback to the first symbol if the specific one is missing
-                symbol_cfg = next(iter(self.config["symbols"].values()))
-                
-            tick_size = float(symbol_cfg["point"])
-            tick_value = float(symbol_cfg["contract_size"]) * tick_size
             lot = self.risk_manager.calculate_lot(
                 equity=balance,
-                risk_pct=float(self.config["risk"]["risk_per_trade_pct"]),
+                risk_pct=risk_pct,
                 sl_distance_price=abs(signal.entry - signal.sl),
                 tick_size=tick_size,
                 tick_value=tick_value,
                 confidence_multiplier=signal.confidence,
             )
 
-            exit_price = float(next_bar["close"])
-            hit_sl = signal.action == "BUY" and float(next_bar["low"]) <= signal.sl
-            hit_tp = signal.action == "BUY" and float(next_bar["high"]) >= signal.tp
-            sell_sl = signal.action == "SELL" and float(next_bar["high"]) >= signal.sl
-            sell_tp = signal.action == "SELL" and float(next_bar["low"]) <= signal.tp
+            exit_price = float(next_row["close"])
+            hit_sl = signal.action == "BUY" and float(next_row["low"]) <= signal.sl
+            hit_tp = signal.action == "BUY" and float(next_row["high"]) >= signal.tp
+            sell_sl = signal.action == "SELL" and float(next_row["high"]) >= signal.sl
+            sell_tp = signal.action == "SELL" and float(next_row["low"]) <= signal.tp
 
             if signal.action == "BUY":
                 if hit_sl:
@@ -108,13 +120,23 @@ class Backtester:
                     exit_price = signal.tp
                 pnl = (signal.entry - exit_price) / tick_size * tick_value * lot
 
-            pnl -= float(self.config["backtest"]["fee_per_lot"]) * lot
+            pnl -= fee_per_lot * lot
             balance += pnl
+            self.risk_manager.update_trade_outcome(pnl)
             self.risk_manager.update_equity_state(balance, balance)
             equity_curve.append(balance)
+            
+            # --- VISUAL PROGRESS ---
+            current_dd = self.risk_manager.total_drawdown_pct(balance)
+            marker = "🟢" if pnl > 0 else "🔴"
+            bar_len = int(min(20, abs(balance - initial_balance) / initial_balance * 100))
+            bar = ("+" * bar_len) if balance >= initial_balance else ("-" * bar_len)
+            
+            print(f"\r{current_row['time'].strftime('%Y-%m')}| {marker} PNL: {pnl:>8.2f} | BAL: {balance:>10.2f} | DD: {current_dd:>5.2f}% | {bar:<20}", end="")
+
             trades.append(
                 BacktestTrade(
-                    time=next_bar["time"],
+                    time=next_row["time"],
                     strategy=self.strategy.name,
                     action=signal.action,
                     entry=signal.entry,
@@ -124,6 +146,7 @@ class Backtester:
                 )
             )
 
+        print("\n") # New line after finished
         equity_series = pd.Series(equity_curve, dtype=float)
         returns = equity_series.pct_change().dropna()
         sharpe = 0.0 if returns.std() == 0 else float((returns.mean() / returns.std()) * sqrt(252))

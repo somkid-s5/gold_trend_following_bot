@@ -52,10 +52,28 @@ def atr(frame: pd.DataFrame, period: int) -> pd.Series:
     return tr.ewm(alpha=1 / period, adjust=False).mean()
 
 
-def macd(series: pd.Series, fast: int, slow: int, signal: int) -> tuple[pd.Series, pd.Series, pd.Series]:
+def macd(series: pd.Series, fast: int, slow: int, signal: int) -> tuple[pd.Series, pd.Series, pd.Series]:       
     fast_ema = ema(series, fast)
     slow_ema = ema(series, slow)
     line = fast_ema - slow_ema
     signal_line = ema(line, signal)
     hist = line - signal_line
     return line, signal_line, hist
+
+
+def adx(frame: pd.DataFrame, period: int = 14) -> pd.Series:
+    plus_dm = frame["high"].diff()
+    minus_dm = frame["low"].diff()
+    plus_dm[plus_dm < 0] = 0
+    minus_dm[minus_dm > 0] = 0
+    minus_dm = minus_dm.abs()
+
+    # Use standard DM/TR filtering
+    plus_dm.loc[plus_dm < minus_dm] = 0
+    minus_dm.loc[minus_dm < plus_dm] = 0
+
+    tr = atr(frame, 1) # True Range
+    plus_di = 100 * (plus_dm.ewm(alpha=1/period, adjust=False).mean() / atr(frame, period))
+    minus_di = 100 * (minus_dm.ewm(alpha=1/period, adjust=False).mean() / atr(frame, period))
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
+    return dx.ewm(alpha=1/period, adjust=False).mean()

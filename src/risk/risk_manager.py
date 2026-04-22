@@ -18,6 +18,8 @@ class RiskManager:
         self.start_of_day_balance: float | None = None
         self.peak_equity: float | None = None
         self._day_anchor = datetime.now(timezone.utc).date()
+        self.consecutive_losses = 0
+        self.last_win_time: datetime | None = None
 
     def update_equity_state(self, balance: float, equity: float) -> None:
         now = datetime.now(timezone.utc)
@@ -29,6 +31,20 @@ class RiskManager:
             self._day_anchor = now.date()
 
         self.peak_equity = equity if self.peak_equity is None else max(self.peak_equity, equity)
+
+    def is_paused_by_circuit_breaker(self, equity: float) -> RiskDecision:
+        # If total drawdown > 15%, pause for 3 days
+        dd = self.total_drawdown_pct(equity)
+        if dd >= 15.0:
+            return RiskDecision(False, f"Circuit Breaker: Total Drawdown too high ({dd:.2f}%)")
+        return RiskDecision(True)
+
+    def update_trade_outcome(self, pnl: float) -> None:
+        if pnl < 0:
+            self.consecutive_losses += 1
+        else:
+            self.consecutive_losses = 0
+            self.last_win_time = datetime.now(timezone.utc)
 
     def calculate_lot(
         self,
@@ -42,8 +58,18 @@ class RiskManager:
         if sl_distance_price <= 0:
             raise ValueError("sl_distance_price must be positive")
 
+        # Loss Streak Protection: Reduce risk if losing consecutively
+        # 1-2 losses: Normal behavior
+        # 3 losses: Reduce to 50%
+        # 4+ losses: Reduce to 25% (Safety Mode)
+        streak_multiplier = 1.0
+        if self.consecutive_losses >= 4:
+            streak_multiplier = 0.25
+        elif self.consecutive_losses >= 3:
+            streak_multiplier = 0.5
+
         # Scale risk based on confidence, but cap it for safety (e.g. max 10% risk per trade or 5x base risk)
-        effective_risk_pct = risk_pct * max(0.5, min(5.0, confidence_multiplier))
+        effective_risk_pct = risk_pct * max(0.2, min(5.0, confidence_multiplier)) * streak_multiplier
         risk_amount = equity * (effective_risk_pct / 100)
         
         tick_size = tick_size or self.symbol_config.get("point", 0.01)

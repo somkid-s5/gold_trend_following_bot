@@ -53,6 +53,20 @@ class TradingEngine:
             raise ValueError("Live mode requires MT5Connector")
         snapshot = self.connector.get_account_info()
         self.risk_manager.update_equity_state(snapshot.balance, snapshot.equity)
+        
+        # Update trade outcomes from history to sync consecutive losses
+        strategy_name = self.config.get("forward_test", {}).get("strategy", "trend_following")
+        history = self.connector.get_strategy_closed_trades(
+            symbol=self.config["trading"]["symbol"],
+            strategy_name=strategy_name,
+            lookback_days=1,
+            current_balance=snapshot.balance
+        )
+        if not history.empty:
+            # Sort by time and update outcome for the last trade if not already processed
+            last_trade_pnl = float(history.iloc[-1]["profit"])
+            self.risk_manager.update_trade_outcome(last_trade_pnl)
+
         return snapshot.balance, snapshot.equity
 
     def _passes_risk(self, spread_points: float, now_utc: datetime, equity: float) -> RiskDecision:
@@ -61,6 +75,7 @@ class TradingEngine:
             self.risk_manager.check_total_dd(equity),
             self.risk_manager.check_spread(spread_points),
             self.risk_manager.news_filter(now_utc, self.config["news_filter"]),
+            self.risk_manager.is_paused_by_circuit_breaker(equity),
         ):
             if not decision.allowed:
                 return decision
