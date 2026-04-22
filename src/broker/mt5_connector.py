@@ -62,15 +62,18 @@ class MT5Connector:
         self.initialized = False
 
     def ensure_symbol(self, symbol: str) -> None:
-        symbol = symbol.upper()
         symbol_info = mt5.symbol_info(symbol)
+        if symbol_info is None:
+            # Try upper case fallback
+            symbol = symbol.upper()
+            symbol_info = mt5.symbol_info(symbol)
+            
         if symbol_info is None:
             raise ValueError(f"Symbol {symbol} not found in MT5 Market Watch")
         if not symbol_info.visible and not mt5.symbol_select(symbol, True):
             raise RuntimeError(f"Unable to select symbol {symbol} for trading")
 
     def get_rates(self, symbol: str, timeframe: str, count: int) -> pd.DataFrame:
-        symbol = symbol.upper()
         self.ensure_symbol(symbol)
         rates = mt5.copy_rates_from_pos(symbol, TIMEFRAME_MAP[timeframe], 0, count)
         if rates is None:
@@ -116,7 +119,6 @@ class MT5Connector:
         tp: float,
         comment: str = "",
     ) -> dict[str, Any]:
-        symbol = symbol.upper()
         symbol_info = self.get_symbol_info(symbol)
         order_type = mt5.ORDER_TYPE_BUY if action.upper() == "BUY" else mt5.ORDER_TYPE_SELL
         

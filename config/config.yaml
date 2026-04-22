@@ -17,6 +17,8 @@ mt5:
 # Trading Universe & Parameters
 trading:
   symbol: "XAUUSDm"
+  poll_seconds: 60
+  reconnect_seconds: 15
   history_bars:
     trend_following: 1500 # Bars needed for D1 EMA simulation
 
@@ -60,6 +62,13 @@ symbols:
     min_lot: 0.01
     max_lot: 20.0
     lot_step: 0.01
+
+# Economic News Filter
+news_filter:
+  enabled: true
+  minutes_before: 45
+  minutes_after: 30
+  high_impact_events: [] # Will be populated by calendar
 
 # External Integrations
 notifications:

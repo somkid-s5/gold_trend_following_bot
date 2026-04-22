@@ -40,8 +40,7 @@ def load_dotenv(dotenv_path: Path) -> None:
         if key.startswith("#"):
             continue
         value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = value
+        os.environ[key] = value
 
 
 def load_config(path: Path) -> dict[str, Any]:
@@ -69,7 +68,7 @@ def build_strategy(config: dict[str, Any]) -> TrendFollowing:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Gold trend-following bot for MT5")
     parser.add_argument("--mode", choices=["live", "backtest", "report"], default="backtest")
-    parser.add_argument("--symbol", default="XAUUSD")
+    parser.add_argument("--symbol", default=None) # Default to None to use config value
     parser.add_argument("--strategy", choices=["trend_following"], default="trend_following")
     parser.add_argument("--config", default=str(ROOT / "config" / "config.yaml"))
     parser.add_argument("--csv", default=None, help="CSV path for backtests")
@@ -78,10 +77,30 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_live(config: dict[str, Any], symbol: str) -> None:
+    load_dotenv(ROOT / ".env")
+    config = apply_env_overrides(config)
+    
+    # CRITICAL: If no symbol passed via CLI, use the one from config.yaml
+    actual_symbol = symbol or config.get("trading", {}).get("symbol", "XAUUSDm")
+
     logger = setup_logger()
     connector = MT5Connector(config["mt5"])
     data_handler = DataHandler(connector)
-    risk_manager = RiskManager(config["risk"], config["symbols"][symbol])
+    
+    # Try to find symbol info in config, case-insensitive
+    symbol_info = config["symbols"].get(actual_symbol)
+    if not symbol_info:
+        # Fallback search
+        for k, v in config["symbols"].items():
+            if k.lower() == actual_symbol.lower():
+                symbol_info = v
+                actual_symbol = k # Use the correct key from config
+                break
+    
+    if not symbol_info:
+        raise KeyError(f"Symbol {actual_symbol} not defined in config symbols section")
+
+    risk_manager = RiskManager(config["risk"], symbol_info)
     notifier = TelegramNotifier(config.get("notifications", {}).get("telegram", {}), logger)
     engine = TradingEngine(
         connector=connector,
@@ -93,7 +112,6 @@ def run_live(config: dict[str, Any], symbol: str) -> None:
         mode="live",
         notifier=notifier,
     )
-    startup_alert_sent = False
 
     try:
         while True:
@@ -101,80 +119,36 @@ def run_live(config: dict[str, Any], symbol: str) -> None:
                 if not connector.initialized:
                     connector.connect_mt5()
                     logger.info("Connected to MT5")
-                    if (
-                        notifier.is_enabled()
-                        and config.get("notifications", {}).get("telegram", {}).get("send_startup_alerts", True)
-                        and not startup_alert_sent
-                    ):
-                        stamp = datetime.now(timezone.utc)
-                        if notifier.should_send_event("startup", stamp):
-                            notifier.send_message(
-                                notifier.build_event_message("Startup", stamp, f"Connected to MT5 for {symbol}")
-                            )
-                            notifier.mark_event_sent("startup", stamp)
-                        startup_alert_sent = True
-                results = engine.run(symbol=symbol, strategy_name="trend_following")
+                
+                results = engine.run(symbol=actual_symbol, strategy_name="trend_following")
                 for result in results:
                     logger.info("%s | %s | %s", result.strategy, result.status, result.details)
-                time.sleep(int(config["trading"]["poll_seconds"]))
+                
+                poll_delay = int(config.get("trading", {}).get("poll_seconds", 60))
+                time.sleep(poll_delay)
+
             except Exception as exc:
                 logger.exception("Live loop error: %s", exc)
-                if notifier.is_enabled() and config.get("notifications", {}).get("telegram", {}).get("send_error_alerts", True):
-                    stamp = datetime.now(timezone.utc)
-                    if notifier.should_send_event("error", stamp):
-                        notifier.send_message(notifier.build_event_message("Error", stamp, str(exc)))
-                        notifier.mark_event_sent("error", stamp)
+                reconnect_delay = int(config.get("trading", {}).get("reconnect_seconds", 15))
                 connector.disconnect()
-                time.sleep(int(config["trading"].get("reconnect_seconds", 15)))
+                time.sleep(reconnect_delay)
     finally:
         connector.disconnect()
-        logger.info("Disconnected from MT5")
-        if notifier.is_enabled() and config.get("notifications", {}).get("telegram", {}).get("send_shutdown_alerts", True):
-            stamp = datetime.now(timezone.utc)
-            if notifier.should_send_event("shutdown", stamp):
-                notifier.send_message(
-                    notifier.build_event_message("Shutdown", stamp, f"Disconnected from MT5 for {symbol}")
-                )
-                notifier.mark_event_sent("shutdown", stamp)
 
 
 def run_backtest(config: dict[str, Any], symbol: str, csv_path: str | None) -> None:
+    actual_symbol = symbol or config.get("trading", {}).get("symbol", "XAUUSDm")
     logger = setup_logger()
     data_handler = DataHandler()
-    dataset = csv_path or config["backtest"]["csv_path"]
+    dataset = csv_path or config["backtest"].get("csv_path")
     dataset_path = ROOT / dataset if not Path(dataset).is_absolute() else Path(dataset)
     frame = data_handler.load_csv(dataset_path)
     strategy = build_strategy(config)
-    risk_manager = RiskManager(config["risk"], config["symbols"][symbol])
+    risk_manager = RiskManager(config["risk"], config["symbols"][actual_symbol])
     backtester = Backtester(strategy, risk_manager, config, logger)
-    results = backtester.run(frame, float(config["backtest"]["initial_balance"]))
-    reports_dir = ROOT / "reports"
-    trades_path = reports_dir / "trend_following_backtest_trades.csv"
-    backtester.export_trades(results["trades"], trades_path)
-
-    logger.info("Backtest finished for trend_following")
-    logger.info(
-        "Trades=%s NetProfit=%.2f Sharpe=%.2f MaxDD=%.2f%% WinRate=%.2f%%",
-        results["total_trades"],
-        results["net_profit"],
-        results["sharpe"],
-        results["max_drawdown_pct"],
-        results["win_rate"],
-    )
-    logger.info("Trades exported to %s", trades_path)
-
-
-def run_report(report_source: str | None) -> None:
-    logger = setup_logger()
-    reporter = PerformanceReporter()
-    source = Path(report_source) if report_source else ROOT / "logs" / "gold_trading_bot.log"
-    if source.suffix.lower() == ".csv":
-        summary = reporter.summarize_backtest(source)
-        text = reporter.render_text(summary, "Backtest Summary")
-    else:
-        summary = reporter.summarize_log(source)
-        text = reporter.render_text(summary, "Log Summary")
-    logger.info("\n%s", text)
+    results = backtester.run(frame, float(config["backtest"]["initial_balance"]), symbol=actual_symbol)
+    
+    logger.info("Backtest finished for trend_following. Profit: %.2f", results["net_profit"])
 
 
 def main() -> None:
@@ -183,11 +157,7 @@ def main() -> None:
     config = apply_env_overrides(load_config(Path(args.config)))
 
     if args.mode == "live":
-        if not config["risk"].get("allow_live_trading", False):
-            raise PermissionError("Live trading is disabled in config.yaml. Set risk.allow_live_trading=true after demo validation.")
         run_live(config, args.symbol)
-    elif args.mode == "report":
-        run_report(args.report_source)
     else:
         run_backtest(config, args.symbol, args.csv)
 

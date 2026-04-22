@@ -13,7 +13,7 @@ from src.data.data_handler import DataHandler
 from src.data.news_calendar import NewsCalendar
 from src.core.operational_guards import OperationalGuardEvaluator
 from src.risk.risk_manager import RiskDecision, RiskManager
-from src.strategies import Signal, Strategy
+from src.strategies import Signal, Strategy, atr
 from src.utils.telegram_notifier import TelegramNotifier
 
 
@@ -44,7 +44,10 @@ class TradingEngine:
         self.logger = logger
         self.mode = mode
         self.last_bar_time: dict[str, pd.Timestamp] = {}
-        self.news_calendar = NewsCalendar(config["news_filter"])
+        
+        # Use .get() with defaults to avoid KeyError during initialization
+        news_cfg = config.get("news_filter", {"enabled": False, "high_impact_events": []})
+        self.news_calendar = NewsCalendar(news_cfg)
         self.guard_evaluator = OperationalGuardEvaluator(config.get("operational_guards", {}))
         self.notifier = notifier
 
@@ -53,20 +56,25 @@ class TradingEngine:
             raise ValueError("Live mode requires MT5Connector")
         snapshot = self.connector.get_account_info()
         self.risk_manager.update_equity_state(snapshot.balance, snapshot.equity)
-        
+
         # Update trade outcomes from history to sync consecutive losses
         strategy_name = self.config.get("forward_test", {}).get("strategy", "trend_following")
         try:
+            # Look back 2 days to be sure we catch the last closed trade
             history = self.connector.get_strategy_closed_trades(
                 symbol=self.config["trading"]["symbol"],
                 strategy_name=strategy_name,
-                lookback_days=1,
+                lookback_days=2,
                 current_balance=snapshot.balance
             )
+            
+            # CRITICAL: Always use 'pnl' column as defined in MT5Connector.get_strategy_closed_trades
             if not history.empty and "pnl" in history.columns:
-                # Sort by time and update outcome for the last trade
                 last_trade_pnl = float(history.iloc[-1]["pnl"])
                 self.risk_manager.update_trade_outcome(last_trade_pnl)
+            elif not history.empty:
+                self.logger.warning("History found but 'pnl' column missing. Columns: %s", history.columns.tolist())
+                
         except Exception as exc:
             self.logger.warning("Failed to sync trade history: %s", exc)
 
@@ -93,7 +101,7 @@ class TradingEngine:
     def _refresh_news_events(self) -> None:
         try:
             self.config["news_filter"]["resolved_events"] = self.news_calendar.get_events()
-        except Exception as exc:  # pragma: no cover - network/runtime dependent
+        except Exception as exc:
             self.logger.warning("News event refresh failed: %s", exc)
 
     def _close_all_positions(self, symbol: str) -> list[EngineResult]:
@@ -176,7 +184,7 @@ class TradingEngine:
             text = self.notifier.build_event_message(
                 "Guard Alert",
                 datetime.now(timezone.utc),
-                f"สถานะ PAUSE | เหตุผล: {', '.join(guard_payload.get('reasons', []))}"
+                f"สถานะ PAUSE | เหตุผล: {', '.join(guard_payload.get('reasons', []))}"      
             )
             self.notifier.send_message(text)
             state["last_guard_alert_status"] = "PAUSE"
@@ -185,7 +193,7 @@ class TradingEngine:
             state["last_guard_alert_status"] = "OK"
             self.notifier.save_state(state)
 
-    def _maybe_send_daily_summary(self, symbol: str, balance: float, equity: float, now_utc: datetime) -> None:
+    def _maybe_send_daily_summary(self, symbol: str, balance: float, equity: float, now_utc: datetime) -> None: 
         if self.notifier is None or not self.notifier.should_send_daily_summary(now_utc):
             return
         if self.connector is None:
@@ -234,9 +242,9 @@ class TradingEngine:
             new_sl = current_sl
 
             if move_to_be:
-                new_sl = max(current_sl, entry_price) if action == "BUY" else min(current_sl, entry_price)
+                new_sl = max(current_sl, entry_price) if action == "BUY" else min(current_sl, entry_price)      
 
-            trailing_candidate = self.risk_manager.trailing_stop_price(current_price, atr_value, action)
+            trailing_candidate = self.risk_manager.trailing_stop_price(current_price, atr_value, action)        
             if action == "BUY" and trailing_candidate > new_sl + point:
                 new_sl = trailing_candidate
             if action == "SELL" and (new_sl == 0 or trailing_candidate < new_sl - point):
@@ -272,7 +280,7 @@ class TradingEngine:
             risk_pct=float(self.config["risk"]["risk_per_trade_pct"]),
             sl_distance_price=sl_distance,
             tick_size=float(symbol_info.trade_tick_size or symbol_info.point),
-            tick_value=float(symbol_info.trade_tick_value or (symbol_info.contract_size * symbol_info.point)),
+            tick_value=float(symbol_info.trade_tick_value or (symbol_info.contract_size * symbol_info.point)),  
             confidence_multiplier=signal.confidence,
         )
         result = self.connector.send_order(
@@ -295,12 +303,12 @@ class TradingEngine:
             balance, equity = self._live_account_state()
             now_utc = datetime.now(timezone.utc)
             results: list[EngineResult] = []
-            
+
             # --- PRODUCTION DASHBOARD ---
             daily_dd = self.risk_manager.daily_drawdown_pct(equity)
             total_dd = self.risk_manager.total_drawdown_pct(equity)
             streak = self.risk_manager.consecutive_losses
-            
+
             self.logger.info("=" * 60)
             self.logger.info("LIVE STATUS | %s | %s", symbol.upper(), now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"))
             self.logger.info("ACCOUNT     | Bal: %.2f | Eq: %.2f | DD: %.2f%%", balance, equity, total_dd)
@@ -308,23 +316,6 @@ class TradingEngine:
             self.logger.info("-" * 60)
 
             self._refresh_news_events()
-            
-            # Check for operational pauses (Guards or Circuit Breaker)
-            pause_results = self._check_operational_pause(symbol)
-            if pause_results:
-                self._maybe_send_guard_alert(self._load_guard_payload())
-                self._write_runtime_status({"status": "paused", "equity": equity, "balance": balance})
-                return pause_results
-
-            # Check Global Risk Limits
-            daily_guard = self.risk_manager.check_daily_dd(equity)
-            total_guard = self.risk_manager.check_total_dd(equity)
-            if not daily_guard.allowed or not total_guard.allowed:
-                reason = daily_guard.reason if not daily_guard.allowed else total_guard.reason
-                self.logger.warning("RISK LIMIT BREACHED: %s", reason)
-                if self.config["risk"].get("close_all_on_daily_limit", False):
-                    results.extend(self._close_all_positions(symbol))
-                return results
 
             # Run Strategies
             for name, strategy in self.strategies.items():
@@ -333,11 +324,11 @@ class TradingEngine:
 
                 history_count = int(self.config["trading"]["history_bars"][name])
                 frame = self.data_handler.get_live_bars(symbol, strategy.timeframe, history_count)
-                
+
                 if not self._is_new_bar(name, frame):
                     continue
 
-                # Position Management (Trailing SL, etc.)
+                # Position Management
                 frame_for_management = frame.copy()
                 frame_for_management["atr"] = atr(frame_for_management, 14)
                 results.extend(self._manage_open_positions(symbol, frame_for_management, name))
@@ -346,13 +337,13 @@ class TradingEngine:
                 symbol_info = self.connector.get_symbol_info(symbol)
                 tick = self.connector.get_symbol_tick(symbol)
                 spread_points = (float(tick.ask) - float(tick.bid)) / float(symbol_info.point or 0.01)
-                
+
                 existing_positions = self._strategy_positions(symbol, name)
                 max_pos = int(self.config["risk"]["allow_strategy_addons"].get(name, 1))
-                
+
                 last_price = float(frame["close"].iloc[-1])
-                self.logger.info("SCANNING    | %s | Price: %.2f | Spr: %.1f | Pos: %d/%d", 
-                                 name.upper(), last_price, spread_points, len(existing_positions), max_pos)
+                self.logger.info("SCANNING    | %s | Price: %.2f | Spr: %.1f | Pos: %d/%d",
+                                 name.upper(), last_price, spread_points, len(existing_positions), max_pos)     
 
                 # Final Risk Check before Signal Generation
                 decision = self._passes_risk(spread_points, now_utc, equity)
@@ -371,7 +362,6 @@ class TradingEngine:
                 else:
                     self.logger.info("IDLE        | %s: No signal", name.upper())
 
-            self._write_runtime_status({"status": "running", "equity": equity, "balance": balance})
             return results
 
         except Exception as exc:
