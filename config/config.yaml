@@ -52,6 +52,15 @@ backtest:
   fee_per_lot: 0.0 # Commission per round turn
   start_date: "2016-01-01"
 
+# Symbol Definitions (Crucial for calculations)
+symbols:
+  XAUUSDm:
+    point: 0.01
+    contract_size: 100
+    min_lot: 0.01
+    max_lot: 20.0
+    lot_step: 0.01
+
 # External Integrations
 notifications:
   telegram:

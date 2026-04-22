@@ -22,7 +22,6 @@ class TrendFollowing:
         data["rsi"] = rsi(data["close"], self.config["rsi_period"])
         data["atr"] = atr(data, self.config["atr_period"])
         data["adx"] = adx(data, 14)
-        data["d1_filter"] = ema(data["close"], 1200)
         
         # Pre-calculate slope
         data["ema_slow_lookback"] = data["ema_slow"].shift(5)
@@ -52,7 +51,6 @@ class TrendFollowing:
         atr_value = float(last["atr"])
         adx_value = float(last["adx"])
         price = float(last["close"])
-        d1_trend = float(last["d1_filter"])
         
         if pd.isna(atr_value) or atr_value <= 0:
             return []
@@ -62,62 +60,55 @@ class TrendFollowing:
         buy_level = float(self.config.get("rsi_buy_level", 40))
         sell_level = float(self.config.get("rsi_sell_level", 60))
 
-        # ADX Multiplier
+        # ADX Multiplier: Aggressive scaling
         adx_multiplier = 1.0
         if adx_value > 25:
-            adx_multiplier = min(1.5, adx_value / 25.0)
-        elif adx_value < 20:
-            adx_multiplier = 0.2 
+            adx_multiplier = min(1.8, adx_value / 20.0) 
+        elif adx_value < 18:
+            adx_multiplier = 0.5 
 
-        # Use Pre-calculated Values (already in 'last' row from prepare_data)
+        # Use Pre-calculated Values
         ema_slow_slope = float(last["ema_slow_slope"])
         gap_is_widening = bool(last["gap_is_widening"])
 
-        # Sideway Shield logic
-        is_sideway = adx_value < 20 or abs(ema_slow_slope) < 0.1
-        sideway_penalty = 0.2 if is_sideway else 1.0 # Stronger penalty
-        widening_bonus = 1.2 if gap_is_widening else 0.7
-
-        # --- D1 FILTER LOGIC ---
-        # Only BUY if price is above D1 Filter, Only SELL if below
-        # This prevents trading against the primary multi-month trend
-        can_buy = price > d1_trend * 1.002 # 0.2% buffer
-        can_sell = price < d1_trend * 0.998
+        # Sideway Shield logic: Catching every trend
+        is_sideway = adx_value < 18 or abs(ema_slow_slope) < 0.05
+        sideway_penalty = 0.6 if is_sideway else 1.0 
+        widening_bonus = 1.3 if gap_is_widening else 0.8
 
         if last["ema_fast"] > last["ema_slow"] and prev["rsi"] < buy_level <= last["rsi"]:
-            if can_buy:
-                entry = price
-                rsi_factor = (last["rsi"] - prev["rsi"]) / 5.0 + 1.0
-                confidence = round(rsi_factor * adx_multiplier * sideway_penalty * widening_bonus * 1.5, 2)
-                confidence = max(0.4, min(5.0, confidence))                
-                signals.append(
-                    Signal(
-                        strategy=self.name,
-                        action="BUY",
-                        entry=entry,
-                        sl=entry - sl_distance,
-                        tp=entry + (sl_distance * rr),
-                        confidence=confidence,
-                        metadata={"atr": atr_value, "adx": adx_value, "d1_dist": price/d1_trend},
-                    )
+            entry = price
+            rsi_factor = (last["rsi"] - prev["rsi"]) / 4.0 + 1.2
+            confidence = round(rsi_factor * adx_multiplier * sideway_penalty * widening_bonus * 1.8, 2)
+            confidence = max(0.5, min(5.0, confidence))
+            
+            signals.append(
+                Signal(
+                    strategy=self.name,
+                    action="BUY",
+                    entry=entry,
+                    sl=entry - sl_distance,
+                    tp=entry + (sl_distance * rr),
+                    confidence=confidence,
+                    metadata={"atr": atr_value, "adx": adx_value, "rsi": last["rsi"]},
                 )
+            )
 
         if last["ema_fast"] < last["ema_slow"] and prev["rsi"] > sell_level >= last["rsi"]:
-            if can_sell:
-                entry = price
-                rsi_factor = (prev["rsi"] - last["rsi"]) / 5.0 + 1.0
-                confidence = round(rsi_factor * adx_multiplier * sideway_penalty * 1.5, 2)
-                confidence = max(0.4, min(5.0, confidence))
-                
-                signals.append(
-                    Signal(
-                        strategy=self.name,
-                        action="SELL",
-                        entry=entry,
-                        sl=entry + sl_distance,
-                        tp=entry - (sl_distance * rr),
-                        confidence=confidence,
-                        metadata={"atr": atr_value, "adx": adx_value, "d1_dist": price/d1_trend},
-                    )
+            entry = price
+            rsi_factor = (prev["rsi"] - last["rsi"]) / 4.0 + 1.2
+            confidence = round(rsi_factor * adx_multiplier * sideway_penalty * widening_bonus * 1.8, 2)
+            confidence = max(0.5, min(5.0, confidence))
+            
+            signals.append(
+                Signal(
+                    strategy=self.name,
+                    action="SELL",
+                    entry=entry,
+                    sl=entry + sl_distance,
+                    tp=entry - (sl_distance * rr),
+                    confidence=confidence,
+                    metadata={"atr": atr_value, "adx": adx_value, "rsi": last["rsi"]},
                 )
+            )
         return signals
