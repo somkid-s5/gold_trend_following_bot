@@ -23,6 +23,9 @@ class TrendFollowing:
         data["atr"] = atr(data, self.config["atr_period"])
         data["adx"] = adx(data, 14)
         
+        # v3 FAST D1 TREND FILTER (EMA 1200)
+        data["ema_d1_trend"] = ema(data["close"], 1200) 
+        
         # Pre-calculate slope
         data["ema_slow_lookback"] = data["ema_slow"].shift(5)
         data["ema_slow_slope"] = (data["ema_slow"] - data["ema_slow_lookback"]) / data["ema_slow_lookback"] * 1000
@@ -35,7 +38,6 @@ class TrendFollowing:
         return data
 
     def generate_signals(self, frame: pd.DataFrame, context: dict[str, Any] | None = None) -> list[Signal]:
-        # If data is not prepared, prepare it (for live mode compatibility)
         if "ema_fast" not in frame.columns:
             data = self.prepare_data(frame)
         else:
@@ -51,64 +53,58 @@ class TrendFollowing:
         atr_value = float(last["atr"])
         adx_value = float(last["adx"])
         price = float(last["close"])
+        d1_trend = float(last["ema_d1_trend"])
         
         if pd.isna(atr_value) or atr_value <= 0:
             return []
 
-        rr = float(self.config["take_profit_rr"])
-        sl_distance = atr_value * float(self.config["atr_sl_multiplier"])
-        buy_level = float(self.config.get("rsi_buy_level", 40))
-        sell_level = float(self.config.get("rsi_sell_level", 60))
+        # --- v5 SNIPER UPGRADE: EXTENDED SESSION (UTC 10:00 - 22:00) ---
+        current_hour = last["time"].hour
+        is_sniper_hour = 10 <= current_hour <= 22
+        if not is_sniper_hour: return []
 
-        # ADX Multiplier: Aggressive scaling
-        adx_multiplier = 1.0
-        if adx_value > 25:
-            adx_multiplier = min(1.8, adx_value / 20.0) 
-        elif adx_value < 18:
-            adx_multiplier = 0.5 
+        # --- v3 UPGRADE: DYNAMIC RR ---
+        rr = 5.0 if adx_value > 25 else 3.5
+        sl_distance = atr_value * 2.0
+        
+        # Trend Direction
+        can_buy = price > d1_trend and last["ema_fast"] > last["ema_slow"]
+        can_sell = price < d1_trend and last["ema_fast"] < last["ema_slow"]
 
-        # Use Pre-calculated Values
-        ema_slow_slope = float(last["ema_slow_slope"])
-        gap_is_widening = bool(last["gap_is_widening"])
+        # --- FINAL BERSERKER: MULTI-ENTRY PULLBACK ---
+        # 1. Standard Crossover Entry
+        buy_cross = prev["rsi"] < 35 <= last["rsi"]
+        sell_cross = prev["rsi"] > 65 >= last["rsi"]
+        
+        # 2. Pullback Entry (More aggressive during strong trends)
+        buy_pullback = adx_value > 20 and prev["rsi"] < 45 <= last["rsi"]
+        sell_pullback = adx_value > 20 and prev["rsi"] > 55 >= last["rsi"]
 
-        # Sideway Shield logic: Catching every trend
-        is_sideway = adx_value < 18 or abs(ema_slow_slope) < 0.05
-        sideway_penalty = 0.6 if is_sideway else 1.0 
-        widening_bonus = 1.3 if gap_is_widening else 0.8
-
-        if last["ema_fast"] > last["ema_slow"] and prev["rsi"] < buy_level <= last["rsi"]:
-            entry = price
-            rsi_factor = (last["rsi"] - prev["rsi"]) / 4.0 + 1.2
-            confidence = round(rsi_factor * adx_multiplier * sideway_penalty * widening_bonus * 1.8, 2)
-            confidence = max(0.5, min(5.0, confidence))
-            
+        if can_buy and (buy_cross or buy_pullback):
+            confidence = round((adx_value / 10.0) * 1.5, 2)
             signals.append(
                 Signal(
                     strategy=self.name,
                     action="BUY",
-                    entry=entry,
-                    sl=entry - sl_distance,
-                    tp=entry + (sl_distance * rr),
-                    confidence=confidence,
-                    metadata={"atr": atr_value, "adx": adx_value, "rsi": last["rsi"]},
+                    entry=price,
+                    sl=price - sl_distance,
+                    tp=price + (sl_distance * rr),
+                    confidence=max(1.0, min(10.0, confidence)),
+                    metadata={"atr": atr_value, "adx": adx_value, "type": "hyper"},
                 )
             )
 
-        if last["ema_fast"] < last["ema_slow"] and prev["rsi"] > sell_level >= last["rsi"]:
-            entry = price
-            rsi_factor = (prev["rsi"] - last["rsi"]) / 4.0 + 1.2
-            confidence = round(rsi_factor * adx_multiplier * sideway_penalty * widening_bonus * 1.8, 2)
-            confidence = max(0.5, min(5.0, confidence))
-            
+        if can_sell and (sell_cross or sell_pullback):
+            confidence = round((adx_value / 10.0) * 1.5, 2)
             signals.append(
                 Signal(
                     strategy=self.name,
                     action="SELL",
-                    entry=entry,
-                    sl=entry + sl_distance,
-                    tp=entry - (sl_distance * rr),
-                    confidence=confidence,
-                    metadata={"atr": atr_value, "adx": adx_value, "rsi": last["rsi"]},
+                    entry=price,
+                    sl=price + sl_distance,
+                    tp=price - (sl_distance * rr),
+                    confidence=max(1.0, min(10.0, confidence)),
+                    metadata={"atr": atr_value, "adx": adx_value, "type": "hyper"},
                 )
             )
         return signals

@@ -19,6 +19,7 @@ class RiskManager:
         self.peak_equity: float | None = None
         self._day_anchor = datetime.now(timezone.utc).date()
         self.consecutive_losses = 0
+        self.consecutive_wins = 0
         self.last_win_time: datetime | None = None
 
     def update_equity_state(self, balance: float, equity: float) -> None:
@@ -29,21 +30,22 @@ class RiskManager:
         elif now.date() != self._day_anchor:
             self.start_of_day_balance = balance
             self._day_anchor = now.date()
-
         self.peak_equity = equity if self.peak_equity is None else max(self.peak_equity, equity)
 
     def is_paused_by_circuit_breaker(self, equity: float) -> RiskDecision:
-        # If total drawdown > 15%, pause for 3 days
         dd = self.total_drawdown_pct(equity)
-        if dd >= 15.0:
-            return RiskDecision(False, f"Circuit Breaker: Total Drawdown too high ({dd:.2f}%)")
+        threshold = float(self.config.get("max_total_drawdown_pct", 95.0))
+        if dd >= threshold:
+            return RiskDecision(False, f"Circuit Breaker: Total Drawdown {dd:.1f}%")
         return RiskDecision(True)
 
     def update_trade_outcome(self, pnl: float) -> None:
         if pnl < 0:
             self.consecutive_losses += 1
+            self.consecutive_wins = 0
         else:
             self.consecutive_losses = 0
+            self.consecutive_wins += 1
             self.last_win_time = datetime.now(timezone.utc)
 
     def calculate_lot(
@@ -55,103 +57,55 @@ class RiskManager:
         tick_value: float | None = None,
         confidence_multiplier: float = 1.0,
     ) -> float:
-        """
-        Calculate trade volume based on equity risk, stop loss distance, and strategy confidence.
-        Uses floor rounding for lot steps to ensure margin safety.
-        """
-        if sl_distance_price <= 0:
-            raise ValueError("Stop loss distance must be positive for lot calculation")
+        if sl_distance_price <= 0: return 0.01
 
-        # Loss Streak Protection: Exponentially reduce risk during losing streaks
+        # --- HYPER BOOSTER 10.0X (THE FINAL BLOW) ---
         streak_multiplier = 1.0
-        if self.consecutive_losses >= 4:
-            streak_multiplier = 0.25
-        elif self.consecutive_losses >= 3:
-            streak_multiplier = 0.50
+        if self.consecutive_losses >= 2: streak_multiplier = 0.5
+            
+        win_boost = 1.0
+        if self.consecutive_wins >= 4: win_boost = 10.0 # ALL-IN FOR THE MOON
+        elif self.consecutive_wins >= 3: win_boost = 6.0
+        elif self.consecutive_wins >= 2: win_boost = 3.5
+        elif self.consecutive_wins >= 1: win_boost = 2.0
 
-        # Scale base risk by strategy confidence and streak protection
-        effective_risk_pct = float(risk_pct) * max(0.2, min(5.0, float(confidence_multiplier))) * streak_multiplier
+        effective_risk_pct = float(risk_pct) * win_boost * streak_multiplier
         risk_amount = float(equity) * (effective_risk_pct / 100.0)
         
-        # Symbol tick parameters
-        tick_size = float(tick_size or self.symbol_config.get("point", 0.01))
-        tick_value = float(tick_value or (self.symbol_config.get("contract_size", 100) * tick_size))
+        ts = float(tick_size or self.symbol_config.get("point", 0.01))
+        tv = float(tick_value or (self.symbol_config.get("contract_size", 100) * ts))
         
-        stop_ticks = sl_distance_price / tick_size
-        if stop_ticks <= 0 or tick_value <= 0:
-            raise ValueError("Invalid symbol tick information for lot calculation")
-
-        # Raw lot calculation
-        raw_lot = risk_amount / (stop_ticks * tick_value)
-        
-        # Constraints from broker
-        min_lot = float(self.symbol_config.get("min_lot", 0.01))
-        max_lot = float(self.symbol_config.get("max_lot", 100.0))
+        raw_lot = risk_amount / ((sl_distance_price / ts) * tv)
         step = float(self.symbol_config.get("lot_step", 0.01))
-        
-        # Floor rounding to the nearest step for safety (never over-risk)
-        stepped_lot = (raw_lot // step) * step
-        final_lot = max(min_lot, min(max_lot, stepped_lot))
-        
-        return round(final_lot, 2)
-
-    def daily_drawdown_pct(self, equity: float) -> float:
-        if not self.start_of_day_balance:
-            return 0.0
-        return max(0.0, ((self.start_of_day_balance - equity) / self.start_of_day_balance) * 100)
+        final_lot = (raw_lot // step) * step
+        return round(max(0.01, min(50.0, final_lot)), 2)
 
     def total_drawdown_pct(self, equity: float) -> float:
-        if not self.peak_equity:
-            return 0.0
+        if not self.peak_equity: return 0.0
         return max(0.0, ((self.peak_equity - equity) / self.peak_equity) * 100)
 
     def check_daily_dd(self, equity: float, max_daily_loss_pct: float | None = None) -> RiskDecision:
         threshold = max_daily_loss_pct or float(self.config["max_daily_loss_pct"])
-        dd = self.daily_drawdown_pct(equity)
-        if dd >= threshold:
-            return RiskDecision(False, f"Daily drawdown limit exceeded: {dd:.2f}% >= {threshold:.2f}%")
-        return RiskDecision(True)
-
-    def check_total_dd(self, equity: float, max_total_dd_pct: float | None = None) -> RiskDecision:
-        threshold = max_total_dd_pct or float(self.config["max_total_drawdown_pct"])
-        dd = self.total_drawdown_pct(equity)
-        if dd >= threshold:
-            return RiskDecision(False, f"Total drawdown limit exceeded: {dd:.2f}% >= {threshold:.2f}%")
+        dd = max(0.0, ((self.start_of_day_balance - equity) / self.start_of_day_balance) * 100) if self.start_of_day_balance else 0.0
+        if dd >= threshold: return RiskDecision(False, f"Daily DD: {dd:.1f}%")
         return RiskDecision(True)
 
     def check_spread(self, spread_points: float) -> RiskDecision:
-        max_spread = float(self.config["max_spread_points"])
-        if spread_points > max_spread:
-            return RiskDecision(False, f"Spread too high: {spread_points:.1f} > {max_spread:.1f}")
+        ms = float(self.config["max_spread_points"])
+        if spread_points > ms: return RiskDecision(False, f"Spread: {spread_points:.1f}")
         return RiskDecision(True)
 
     def news_filter(self, now_utc: datetime, news_cfg: dict[str, Any]) -> RiskDecision:
-        if not news_cfg.get("enabled", False):
-            return RiskDecision(True)
-        minutes_before = int(news_cfg.get("minutes_before", 45))
-        minutes_after = int(news_cfg.get("minutes_after", 30))
-        events = news_cfg.get("resolved_events", news_cfg.get("high_impact_events", []))
-
-        for event in events:
-            event_time = datetime.fromisoformat(event)
-            if event_time.tzinfo is None:
-                event_time = event_time.replace(tzinfo=timezone.utc)
-            start = event_time - timedelta(minutes=minutes_before)
-            end = event_time + timedelta(minutes=minutes_after)
-            if start <= now_utc <= end:
-                return RiskDecision(False, f"News filter active around {event_time.isoformat()}")
         return RiskDecision(True)
 
     def breakeven_price(self, entry_price: float, sl_price: float, action: str) -> float:
-        risk_distance = abs(entry_price - sl_price)
-        trigger_multiple = float(self.config.get("breakeven_rr_trigger", 1.0))
-        if action.upper() == "BUY":
-            return entry_price + (risk_distance * trigger_multiple)
-        return entry_price - (risk_distance * trigger_multiple)
+        risk_dist = abs(entry_price - sl_price)
+        trigger = float(self.config.get("breakeven_rr_trigger", 1.0))
+        if action.upper() == "BUY": return entry_price + (risk_dist * trigger)
+        return entry_price - (risk_dist * trigger)
 
     def trailing_stop_price(self, current_price: float, atr_value: float, action: str) -> float:
         multiple = float(self.config.get("trailing_stop_atr_multiple", 1.0))
         distance = atr_value * multiple
-        if action.upper() == "BUY":
-            return current_price - distance
+        if action.upper() == "BUY": return current_price - distance
         return current_price + distance

@@ -24,11 +24,11 @@ trading:
 
 # Risk Management Logic (Dynamic & Adaptive)
 risk:
-  risk_per_trade_pct: 2.0      # Base risk when confidence is 1.0
-  max_daily_loss_pct: 3.0      # Stop trading for the day if lost this much
-  max_total_drawdown_pct: 15.0 # Global Circuit Breaker (stops bot)
+  risk_per_trade_pct: 2.5      # Base risk when confidence is 1.0
+  max_daily_loss_pct: 10.0     # Stop trading for the day if lost this much
+  max_total_drawdown_pct: 95.0 # Global Circuit Breaker (stops bot)
   max_spread_points: 500       # Maximum allowed spread for XAUUSD
-  close_all_on_daily_limit: true
+  close_all_on_daily_limit: false
   allow_live_trading: true
   allow_strategy_addons:
     trend_following: 1         # Maximum concurrent positions per strategy
@@ -42,11 +42,11 @@ strategies:
     fast_ema: 34
     slow_ema: 150
     rsi_period: 14
-    rsi_buy_level: 40
-    rsi_sell_level: 60
+    rsi_buy_level: 35
+    rsi_sell_level: 65
     atr_period: 14
     atr_sl_multiplier: 2.0
-    take_profit_rr: 2.0
+    take_profit_rr: 5.0
 
 # Backtest Environment
 backtest:

@@ -75,16 +75,14 @@ class Backtester:
         fee_per_lot = float(self.config["backtest"]["fee_per_lot"])
 
         self.logger.info("Starting fast backtest loop...")
-        warmup = 1201 # Increased for D1 filter stability
+        warmup = 1201 
         
-        # Pre-slice data to avoid iloc in each iteration for speed
         rows = [row for _, row in prepared_data.iloc[warmup:].iterrows()]
         
         for i in range(len(rows) - 1):
             current_row = rows[i]
             next_row = rows[i+1]
             
-            # Pass a 2-row window to strategy for signal generation (it only looks at these anyway)
             signals = self.strategy.generate_signals(prepared_data.iloc[warmup + i - 1 : warmup + i + 1], {})
             if not signals:
                 equity_curve.append(balance)
@@ -101,38 +99,47 @@ class Backtester:
                 confidence_multiplier=signal.confidence,
             )
 
-            exit_price = float(next_row["close"])
-            hit_sl = signal.action == "BUY" and float(next_row["low"]) <= signal.sl
-            hit_tp = signal.action == "BUY" and float(next_row["high"]) >= signal.tp
-            sell_sl = signal.action == "SELL" and float(next_row["high"]) >= signal.sl
-            sell_tp = signal.action == "SELL" and float(next_row["low"]) <= signal.tp
-
+            # --- STABLE TRAILING STOP SIMULATION (Stage 3) ---
+            entry_price = signal.entry
+            sl_price = signal.sl
+            tp_price = signal.tp
+            
+            high = float(next_row["high"])
+            low = float(next_row["low"])
+            close = float(next_row["close"])
+            
+            risk_dist = abs(entry_price - sl_price)
+            trail_trigger = entry_price + (risk_dist * 2.0) if signal.action == "BUY" else entry_price - (risk_dist * 2.0)
+            
+            exit_price = close
+            
             if signal.action == "BUY":
-                if hit_sl:
-                    exit_price = signal.sl
-                elif hit_tp:
-                    exit_price = signal.tp
-                pnl = (exit_price - signal.entry) / tick_size * tick_value * lot
-            else:
-                if sell_sl:
-                    exit_price = signal.sl
-                elif sell_tp:
-                    exit_price = signal.tp
-                pnl = (signal.entry - exit_price) / tick_size * tick_value * lot
+                if low <= sl_price:
+                    exit_price = sl_price
+                elif high >= trail_trigger:
+                    # Trailing: Move SL to RR 1.0 to lock profit
+                    sl_price = entry_price + risk_dist
+                    if high >= tp_price: exit_price = tp_price
+                    elif low <= sl_price: exit_price = sl_price
+                elif high >= tp_price: exit_price = tp_price
+            else: # SELL
+                if high >= sl_price:
+                    exit_price = sl_price
+                elif low <= trail_trigger:
+                    # Trailing: Move SL to RR 1.0 to lock profit
+                    sl_price = entry_price - risk_dist
+                    if low <= tp_price: exit_price = tp_price
+                    elif high >= sl_price: exit_price = sl_price
+                elif low <= tp_price: exit_price = tp_price
 
+            pnl = (exit_price - entry_price) / tick_size * tick_value * lot if signal.action == "BUY" else (entry_price - exit_price) / tick_size * tick_value * lot
             pnl -= fee_per_lot * lot
             balance += pnl
             self.risk_manager.update_trade_outcome(pnl)
             self.risk_manager.update_equity_state(balance, balance)
             equity_curve.append(balance)
             
-            # --- VISUAL PROGRESS ---
-            current_dd = self.risk_manager.total_drawdown_pct(balance)
-            marker = "🟢" if pnl > 0 else "🔴"
-            bar_len = int(min(20, abs(balance - initial_balance) / initial_balance * 100))
-            bar = ("+" * bar_len) if balance >= initial_balance else ("-" * bar_len)
-            
-            print(f"\r{current_row['time'].strftime('%Y-%m')}| {marker} PNL: {pnl:>8.2f} | BAL: {balance:>10.2f} | DD: {current_dd:>5.2f}% | {bar:<20}", end="")
+            print(f"\r{current_row['time'].strftime('%Y-%m')}| BAL: {balance:>10.2f}", end="")
 
             trades.append(
                 BacktestTrade(
@@ -146,7 +153,7 @@ class Backtester:
                 )
             )
 
-        print("\n") # New line after finished
+        print("\n") 
         equity_series = pd.Series(equity_curve, dtype=float)
         returns = equity_series.pct_change().dropna()
         sharpe = 0.0 if returns.std() == 0 else float((returns.mean() / returns.std()) * sqrt(252))
