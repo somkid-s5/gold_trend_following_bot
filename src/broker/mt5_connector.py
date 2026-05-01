@@ -247,6 +247,30 @@ class MT5Connector:
             raise RuntimeError(f"close_position failed: {code} {message}")
         return result._asdict()
 
+    def get_total_invested_capital(self) -> float:
+        """
+        Automatically scans MT5 history to find all deposits and withdrawals.
+        DEAL_TYPE_BALANCE (value 2) identifies these operations.
+        """
+        if not self.initialized and not self.connect_mt5():
+            return 0.0
+            
+        # Scan from account inception
+        date_from = datetime(2010, 1, 1)
+        date_to = datetime.now()
+        
+        deals = mt5.history_deals_get(date_from, date_to)
+        if deals is None:
+            return 0.0
+            
+        total_invested = 0.0
+        # DEAL_TYPE_BALANCE = 2
+        for d in deals:
+            if d.type == 2: # Deposit/Withdrawal/Adjustment
+                total_invested += d.profit
+                
+        return total_invested
+
     def get_account_info(self) -> AccountSnapshot:
         info = mt5.account_info()
         if info is None:

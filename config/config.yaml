@@ -21,10 +21,10 @@ trading:
     trend_following: 3000
 
 risk:
-  risk_per_trade_pct: 2.0      # Base risk (will be controlled by Fixed Ratio)
-  max_daily_loss_pct: 10.0     
+  risk_per_trade_pct: 3.0      
+  max_daily_loss_pct: 15.0     
   max_total_drawdown_pct: 50.0 
-  max_spread_points: 500       
+  max_spread_points: 350       # Tighter spread limit for Standard account
   close_all_on_daily_limit: true
   allow_live_trading: true
   allow_strategy_addons:

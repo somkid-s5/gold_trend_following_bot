@@ -95,25 +95,31 @@ class TelegramNotifier:
         account: dict[str, Any],
         guard_payload: dict[str, Any] | None,
         trades_frame: Any,
+        connector: Any, # Pass connector to fetch history
     ) -> str:
+        # AUTOMATICALLY fetch Invested Capital from MT5 History
+        invested = connector.get_total_invested_capital()
+        
         total_trades = int(len(trades_frame)) if trades_frame is not None else 0
         day_profit = float(trades_frame["pnl"].sum()) if trades_frame is not None and not trades_frame.empty else 0.0
-        win_rate = float((trades_frame["pnl"] > 0).mean() * 100) if trades_frame is not None and not trades_frame.empty else 0.0
-        guard_status = guard_payload.get("status", "UNKNOWN") if guard_payload else "UNKNOWN"
-        reasons = ", ".join(guard_payload.get("reasons", [])) if guard_payload else "ไม่มีข้อมูล guard"
-        pnl_emoji = "🟢" if day_profit > 0 else "🔴" if day_profit < 0 else "🟡"
-        guard_emoji = "🟢" if guard_status == "OK" else "⛔" if guard_status == "PAUSE" else "⚪"
+        
+        # Calculate Wealth Metrics
+        equity = float(account['equity'])
+        net_profit = equity - invested
+        profit_emoji = "📈" if net_profit >= 0 else "📉"
+        
         return (
-            f"📊 *สรุปรายวัน XAUUSD*\n"
-            f"🗓 วันที่ UTC: `{now_utc.date().isoformat()}`\n"
-            f"🤖 กลยุทธ์: `{strategy_name}`\n"
-            f"💰 Balance: `{account['balance']:.2f}`\n"
-            f"💎 Equity: `{account['equity']:.2f}`\n"
-            f"🧾 จำนวนไม้ที่ปิดวันนี้: `{total_trades}`\n"
-            f"{pnl_emoji} กำไร/ขาดทุนวันนี้: `{day_profit:.2f}`\n"
-            f"🎯 Win rate วันนี้: `{win_rate:.2f}%`\n"
-            f"{guard_emoji} สถานะ Guard: `{guard_status}`\n"
-            f"📝 หมายเหตุ: {reasons}"
+            f"📊 *TITAN WEALTH REPORT*\n"
+            f"🗓 วันที่: `{now_utc.date().isoformat()}`\n"
+            f"--- 🏦 ACCOUNTS ---\n"
+            f"💰 Equity รวม: `${equity:,.2f}`\n"
+            f"🏛️ ทุนที่เติม (Auto-Detected): `${invested:,.2f}`\n"
+            f"{profit_emoji} กำไรสะสม: `${net_profit:,.2f}`\n"
+            f"--- 🎯 TODAY ---\n"
+            f"🧾 ไม้ที่ปิดวันนี้: `{total_trades}`\n"
+            f"💵 กำไรวันนี้: `${day_profit:,.2f}`\n"
+            f"--- 🛡️ GUARD ---\n"
+            f"🚦 สถานะ: `{guard_payload.get('status', 'OK') if guard_payload else 'OK'}`"
         )
 
     def build_event_message(self, event_name: str, now_utc: datetime, details: str) -> str:

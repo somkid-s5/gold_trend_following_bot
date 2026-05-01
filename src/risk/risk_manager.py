@@ -49,25 +49,24 @@ class RiskManager:
         confidence_multiplier: float = 1.0,
     ) -> float:
         """
-        v19 TITAN OVERDRIVE SIZING
-        Dual-Phase Scaling to reach $100k.
+        v19 STANDARD $200 STARTER SIZING
+        Optimized for small accounts on Exness Standard.
         """
         if sl_distance_price <= 0: return 0.01
         s_cfg = self.symbols_config.get(symbol, next(iter(self.symbols_config.values())))
 
-        # --- v19 OVERDRIVE LOGIC ---
-        base_lot = 0.1
+        # --- v19 SMALL ACCOUNT OVERDRIVE ---
+        # Starting with 0.02 Lot (Safe for $200)
+        # Increase 0.01 Lot for every $100 Profit
+        base_lot = 0.02
         
-        if self.realized_trading_profit < 10000.0:
-            # Phase 1: Stable Growth (Delta $1000)
-            num_increments = int(self.realized_trading_profit / 1000.0)
-            calculated_lot = base_lot + (num_increments * 0.1)
+        if self.realized_trading_profit < 2000.0:
+            # Phase 1: Growth from small base
+            num_increments = int(self.realized_trading_profit / 100.0)
+            calculated_lot = base_lot + (num_increments * 0.01)
         else:
-            # Phase 2: Hyper Drive (Delta $500 for next levels)
-            # Already earned $10,000 = 1.0 Lot baseline
-            extra_profit = self.realized_trading_profit - 10000.0
-            num_increments = int(extra_profit / 500.0)
-            calculated_lot = 1.1 + (num_increments * 0.1)
+            # Phase 2: Overdrive (Profit > $2000)
+            calculated_lot = 0.2 + (int((self.realized_trading_profit - 2000) / 100) * 0.02)
 
         # Win Streak Cap Protection
         max_risk_pct = 4.0 

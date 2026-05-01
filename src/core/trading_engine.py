@@ -187,4 +187,18 @@ class TradingEngine:
             tp=signal.tp,
             comment=f"{signal.strategy}|conf={signal.confidence:.2f}",
         )
+        
+        # --- TELEGRAM NOTIFICATION ---
+        if self.notifier and self.notifier.is_enabled():
+            msg = (
+                f"🚀 *ORDER EXECUTED*\n"
+                f"🌍 Symbol: `{symbol}`\n"
+                f"🎯 Action: `{signal.action}`\n"
+                f"💰 Volume: `{lot} lots`\n"
+                f"🛡️ SL: `{signal.sl:.2f}`\n"
+                f"🏁 TP: `{signal.tp:.2f}`\n"
+                f"📈 Confidence: `{signal.confidence:.2f}`"
+            )
+            self.notifier.send_message(msg)
+            
         return EngineResult(signal.strategy, "executed", f"{symbol} {signal.action} {lot} lots")
