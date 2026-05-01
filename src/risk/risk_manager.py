@@ -49,45 +49,45 @@ class RiskManager:
         confidence_multiplier: float = 1.0,
     ) -> float:
         """
-        v17 IRON SHIELD SIZING
-        Combines Fixed Ratio scaling with a HARD 3% Risk Cap per trade.
-        Never crashes, always compounds.
+        v19 TITAN OVERDRIVE SIZING
+        Dual-Phase Scaling to reach $100k.
         """
         if sl_distance_price <= 0: return 0.01
         s_cfg = self.symbols_config.get(symbol, next(iter(self.symbols_config.values())))
 
-        # 1. FIXED RATIO SCALING (The Growth Engine)
-        base_lot = 0.05
-        profit_delta = 1000.0 
-        num_increments = max(0, int(self.realized_trading_profit / profit_delta))
-        scaled_lot = base_lot + (num_increments * 0.05)
-
-        # 2. HARD RISK CAP (The Safety Armor - Max 3.0% per trade)
-        max_risk_pct = 3.0 
-        risk_amount = float(equity) * (max_risk_pct / 100.0)
+        # --- v19 OVERDRIVE LOGIC ---
+        base_lot = 0.1
         
+        if self.realized_trading_profit < 10000.0:
+            # Phase 1: Stable Growth (Delta $1000)
+            num_increments = int(self.realized_trading_profit / 1000.0)
+            calculated_lot = base_lot + (num_increments * 0.1)
+        else:
+            # Phase 2: Hyper Drive (Delta $500 for next levels)
+            # Already earned $10,000 = 1.0 Lot baseline
+            extra_profit = self.realized_trading_profit - 10000.0
+            num_increments = int(extra_profit / 500.0)
+            calculated_lot = 1.1 + (num_increments * 0.1)
+
+        # Win Streak Cap Protection
+        max_risk_pct = 4.0 
+        risk_amount = float(equity) * (max_risk_pct / 100.0)
         ts = float(tick_size or s_cfg.get("point", 0.01))
         tv = float(tick_value or (s_cfg.get("contract_size", 100) * ts))
-        
         max_allowed_lot = risk_amount / ((sl_distance_price / ts) * tv)
-        
-        # 3. SELECT MINIMUM (Never exceed safe limit)
-        final_lot = min(scaled_lot, max_allowed_lot)
-        
-        # Win Streak Boost (only if within max_risk_pct)
-        if self.consecutive_wins >= 2:
-            final_lot = min(final_lot * 1.5, max_allowed_lot)
 
+        final_lot = min(calculated_lot, max_allowed_lot)
+        
         step = float(s_cfg.get("lot_step", 0.01))
         final_lot = (final_lot // step) * step
         
-        return round(max(0.01, min(20.0, final_lot)), 2)
+        return round(max(0.01, min(100.0, final_lot)), 2)
 
     def calculate_lot(self, *args, **kwargs):
-        return self.calculate_lot_percent(*args, risk_pct=2.0, **kwargs)
+        return self.calculate_lot_percent(*args, risk_pct=3.0, **kwargs)
 
     def check_correlation(self, symbol: str, open_positions: list[dict[str, Any]]) -> RiskDecision:
-        if len(open_positions) >= 1: return RiskDecision(False, "DCA Safe: 1 Position Only")
+        if len(open_positions) >= 2: return RiskDecision(False, "Overdrive Cap")
         return RiskDecision(True)
 
     def total_drawdown_pct(self, equity: float) -> float:
@@ -97,12 +97,12 @@ class RiskManager:
     def check_daily_dd(self, equity: float) -> RiskDecision:
         if not self.start_of_day_balance: return RiskDecision(True)
         dd = ((self.start_of_day_balance - equity) / self.start_of_day_balance) * 100
-        if dd >= 5.0: return RiskDecision(False, f"Daily limit: {dd:.1f}%")
+        if dd >= 15.0: return RiskDecision(False, f"Daily limit: {dd:.1f}%")
         return RiskDecision(True)
 
     def check_total_dd(self, equity: float) -> RiskDecision:
         dd = self.total_drawdown_pct(equity)
-        if dd >= 25.0: return RiskDecision(False, f"Global Halt: {dd:.1f}%")
+        if dd >= 40.0: return RiskDecision(False, f"Safety Halt: {dd:.1f}%")
         return RiskDecision(True)
 
     def check_spread(self, spread_points: float) -> RiskDecision:
@@ -120,6 +120,6 @@ class RiskManager:
         return entry_price - dist
 
     def trailing_stop_price(self, current_price: float, atr_value: float, action: str) -> float:
-        m = 2.0
+        m = 1.5
         if action.upper() == "BUY": return current_price - (atr_value * m)
         return current_price + (atr_value * m)

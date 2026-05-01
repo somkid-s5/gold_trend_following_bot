@@ -1,76 +1,33 @@
-# 🏆 Gold Trend Following Bot - Institutional Grade
+# 🏆 TITAN GOLD BERSERKER - 100K OVERDRIVE ENGINE
 
-An advanced, high-performance algorithmic trading bot for Gold (XAUUSD), built with Python and MetaTrader 5. Engineered for **Super Aggressive** capital growth while maintaining a robust **Adaptive Resilience** system.
+ระบบเทรดทองคำอัตโนมัติ (Algorithmic Trading) ระดับสถาบันการเงิน ออกแบบมาเพื่อพิชิตเป้าหมาย $100,000 ด้วยกลยุทธ์ **Institutional Breakout** และการบริหารเงินแบบ **Dual-Phase Scaling**
 
-![Project Status](https://img.shields.io/badge/Status-Production--Ready-green?style=for-the-badge)
-![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
+## 🚀 จุดเด่นของระบบ (Production Edition)
+- **Strategy:** Institutional Breakout (Tokyo Trap Guard) - เข้าเทรดเฉพาะช่วง London/New York และรอให้ราคาทะลุกรอบเอเชียเพื่อความแม่นยำสูงสุด
+- **Risk Management:** v19 Titan Overdrive - ระบบทบต้น 2 ระยะที่จะเร่งความเร็วในการทำกำไรเมื่อพอร์ตโตเกิน $10,000
+- **Safety:** Hard 4% Risk Cap ต่อไม้ และ Correlation Guard ป้องกันการโอเวอร์เทรดในคู่เงินที่วิ่งตามกัน
+- **Dashboard:** ระบบหน้าจอควบคุมแบบ Real-time ผ่าน Streamlit
 
-## 🚀 Key Features
+## 🏗️ โครงสร้างโปรเจกต์
+- `main.py`: ศูนย์กลางควบคุมบอทในโหมด Live Portfolio
+- `src/strategies/`: สมองกลที่ใช้กรองเทรนด์และจุดเข้าเทรด
+- `src/risk/`: ระบบบริหารเงินระดับสถาบัน (Overdrive Engine)
+- `dashboard.py`: หน้าจอแสดงผล PNL และสถานะพอร์ตแบบสดๆ
 
-### ⚡ Turbo Performance
-*   **Vectorized Indicators**: Pre-calculates 10 years of data in seconds using Pandas.
-*   **Fast Backtest Loop**: Execute 54,000+ bars (H1, 10 years) in under 15 seconds.
-*   **Visual Terminal Mode**: Real-time ASCII dashboard showing Equity, PnL, and Drawdown during backtesting.
-
-### 🛡️ Adaptive Resilience System
-*   **Dynamic Risk Scaling**: Automatically scales risk per trade from **2.0% to 10.0%** based on strategy confidence (EMA Gap + RSI Momentum).
-*   **D1 Trend Filter**: Higher-timeframe protection. Only takes trades that align with the daily (D1) trend.
-*   **Sideway Shield**: Uses ADX and EMA Slope analysis to detect flat markets and reduce risk by up to 80% during choppy periods.
-*   **Anti-Martingale Protection**: Automatically slashes lot sizes during consecutive losing streaks to protect core capital.
-
-### 📊 Professional Monitoring
-*   **Live Dashboard**: Professional poll-cycle logging showing Balance, Equity, Daily Drawdown, and Strategy Status.
-*   **Telegram Integration**: Real-time alerts for trades, risk breaches, and daily performance summaries.
-*   **Circuit Breaker**: Global drawdown protection that pauses the bot if losses exceed 15% to prevent catastrophic failure.
-
-## 🛠️ Installation & Setup
-
-### 1. Requirements
-*   Python 3.10+
-*   MetaTrader 5 (Exness or IC Markets recommended)
-*   Dependencies: `pip install -r requirements.txt`
-
-### 2. Configuration (`.env`)
-Create a `.env` file in the root directory:
-```env
-MT5_LOGIN=433209659
-MT5_PASSWORD="your_password"
-MT5_SERVER="Exness-MT5Trial7"
-MT5_PATH="C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe"
-
-TELEGRAM_BOT_TOKEN="your_bot_token"
-TELEGRAM_CHAT_ID="your_chat_id"
-```
-
-### 3. Usage
-
-#### **Run Live Trading**
-```bash
-python main.py --mode live --symbol XAUUSDm
-```
-
-#### **Run Fast Backtest (10 Years)**
-```bash
-python scripts/run_mt5_backtests.py --days 3650 --symbol XAUUSDm
-```
-
-#### **Analyze Trade History**
-```bash
-python scripts/analyze_trade_history.py
-```
-
-## 📈 Performance Summary (Backtest 2016-2026)
-*   **Net Profit**: +$25,666.16 (On $10,000 initial)
-*   **Win Rate**: 51.55%
-*   **Max Drawdown**: 67.20% (Aggressive mode)
-*   **Sharpe Ratio**: 0.13
-
-## 📁 Project Structure
-*   `src/core`: Main trading engine and poll cycles.
-*   `src/strategies`: Trend following logic with ADX and HTF filters.
-*   `src/risk`: Adaptive lot calculation and equity protection.
-*   `src/broker`: MetaTrader 5 bridge and order execution.
-*   `scripts`: High-performance backtesting and analysis tools.
+## 🏁 วิธีเริ่มใช้งาน (Quick Start)
+1. **ติดตั้ง Dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. **ตั้งค่าบัญชี:** แก้ไขไฟล์ `.env` ใส่ MT5 Login, Password และ Server ให้เรียบร้อย
+3. **เริ่มรันบอท (Titan Mode):**
+   ```bash
+   python main.py --mode live
+   ```
+4. **เปิดแผงควบคุม (Dashboard):**
+   ```bash
+   streamlit run dashboard.py
+   ```
 
 ---
-**Disclaimer**: This bot is configured for high-risk trading (up to 10% per trade). Use with caution and always validate on a demo account before going live.
+**Disclaimer**: การลงทุนมีความเสี่ยง ระบบนี้ถูกออกแบบมาเพื่อการรันแบบ DCA ระยะยาว 10 ปี ควรทดสอบบนบัญชี Demo ก่อนใช้งานจริงเสมอ
