@@ -32,21 +32,6 @@ def load_dotenv(dotenv_path: Path) -> None:
         value = value.strip().strip('"').strip("'")
         os.environ[key] = value
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run MT5 backtests using live broker history")
-    parser.add_argument("--symbol", default="XAUUSD")
-    parser.add_argument("--days", type=int, default=180)
-    parser.add_argument("--strategies", nargs="+", choices=["trend_following"], default=["trend_following"])
-    parser.add_argument("--config", default=str(ROOT / "config" / "config.yaml"))
-    return parser.parse_args()
-
-
-def require_env(name: str) -> str:
-    value = os.getenv(name)
-    if not value: raise EnvironmentError(f"Missing required environment variable: {name}")
-    return value
-
-
 def fetch_frame(symbol: str, start: datetime, end: datetime, mt5_timeframe: int) -> pd.DataFrame:
     rates = mt5.copy_rates_range(symbol, mt5_timeframe, start, end)
     if rates is None or len(rates) == 0:
@@ -58,74 +43,62 @@ def fetch_frame(symbol: str, start: datetime, end: datetime, mt5_timeframe: int)
 
 
 def main() -> None:
-    args = parse_args()
-    load_dotenv(ROOT / ".env")
-    login = int(require_env("MT5_LOGIN"))
-    password = require_env("MT5_PASSWORD")
-    server = require_env("MT5_SERVER")
-    path = require_env("MT5_PATH")
+    parser = argparse.ArgumentParser(description="TITAN Backtest Engine")
+    parser.add_argument("--symbol", default="XAUUSDm")
+    parser.add_argument("--days", type=int, default=365)
+    parser.add_argument("--config", default=str(ROOT / "config" / "config.yaml"))
+    args = parser.parse_args()
 
+    load_dotenv(ROOT / ".env")
     config = load_config(Path(args.config))
-    logger = setup_logger("mt5_batch_backtest")
+    logger = setup_logger("backtest_engine")
     strategy = build_strategy(config)
     
-    # --- DYNAMIC TIMEFRAME FOR M5 ---
-    tf_str = config["strategies"]["trend_following"].get("timeframe", "M5")
-    if tf_str == "M5": mt5_tf = mt5.TIMEFRAME_M5
-    elif tf_str == "M15": mt5_tf = mt5.TIMEFRAME_M15
-    elif tf_str == "H4": mt5_tf = mt5.TIMEFRAME_H4
-    else: mt5_tf = mt5.TIMEFRAME_H1
+    tf_str = config["strategies"]["trend_following"].get("timeframe", "H1")
+    mt5_tf = mt5.TIMEFRAME_H1 if tf_str == "H1" else mt5.TIMEFRAME_M15
 
-    if not mt5.initialize(path=path, login=login, password=password, server=server, timeout=60_000):
-        raise SystemExit(f"MT5 initialize failed: {mt5.last_error()}")
-
-    reports_dir = ROOT / "reports"
-    data_dir = ROOT / "data"
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    data_dir.mkdir(parents=True, exist_ok=True)
+    if not mt5.initialize(
+        path=os.getenv("MT5_PATH"),
+        login=int(os.getenv("MT5_LOGIN", 0)),
+        password=os.getenv("MT5_PASSWORD"),
+        server=os.getenv("MT5_SERVER")
+    ):
+        print(f"MT5 Init Failed: {mt5.last_error()}")
+        return
 
     try:
-        if not mt5.symbol_select(args.symbol, True):
-            raise RuntimeError(f"Unable to select symbol {args.symbol}: {mt5.last_error()}")
-
-        logger.info("Running trend_following on %s for the last %s days", tf_str, args.days)
+        mt5.symbol_select(args.symbol, True)
         start = datetime.now(timezone.utc) - timedelta(days=args.days)
         end = datetime.now(timezone.utc)
         
         frame = fetch_frame(args.symbol, start, end, mt5_tf)
-        data_path = data_dir / f"real_{args.symbol.lower()}_{tf_str.lower()}_{args.days}d.csv"
-        frame.to_csv(data_path, index=False)
-
         risk_manager = RiskManager(config["risk"], config["symbols"])
         backtester = Backtester(strategy, risk_manager, config, logger)
         result = backtester.run(frame, float(config["backtest"]["initial_balance"]), symbol=args.symbol)
-        trades_path = reports_dir / f"trend_following_{args.days}d_trades.csv"
-        backtester.export_trades(result["trades"], trades_path)
+        
+        # Save Report
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        reports_dir = ROOT / "reports"
+        reports_dir.mkdir(exist_ok=True)
+        summary_path = reports_dir / f"backtest_{args.symbol}_{timestamp}.json"
+        
+        payload = {
+            "symbol": args.symbol,
+            "net_profit": round(result["net_profit"], 2),
+            "roi_pct": round((result["net_profit"]/float(config["backtest"]["initial_balance"]))*100, 2),
+            "max_drawdown": round(result["max_drawdown_pct"], 2),
+            "total_trades": result["total_trades"],
+            "win_rate": round(result["win_rate"], 2)
+        }
+        
+        with open(summary_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=4)
+            
+        print(f"\n✅ DONE! Profit: ${payload['net_profit']} | ROI: {payload['roi_pct']}%")
+        print(f"📄 Report: reports/{summary_path.name}")
+
     finally:
         mt5.shutdown()
-
-    payload: dict[str, Any] = {
-        "strategy": "trend_following",
-        "timeframe": tf_str,
-        "bars": len(frame),
-        "start": frame["time"].min().isoformat(),
-        "end": frame["time"].max().isoformat(),
-        "total_trades": result["total_trades"],
-        "net_profit": round(result["net_profit"], 2),
-        "ending_balance": round(result["ending_balance"], 2),
-        "max_drawdown_pct": round(result["max_drawdown_pct"], 2),
-        "sharpe": round(result["sharpe"], 2),
-        "win_rate": round(result["win_rate"], 2),
-        "data_csv": str(data_path),
-        "trades_csv": str(trades_path),
-    }
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    summary_path = reports_dir / f"mt5_backtest_{timestamp}.json"
-    summary_path.write_text(json.dumps([payload], indent=2), encoding="utf-8")
-    print(json.dumps([payload], indent=2))
-    print(f"\nSummary written to: {summary_path}")
-
 
 if __name__ == "__main__":
     main()
