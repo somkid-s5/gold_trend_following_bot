@@ -27,7 +27,7 @@ def fetch_history(symbol, days):
 def run_dca_portfolio_backtest():
     parser = argparse.ArgumentParser()
     parser.add_argument("--days", type=int, default=365)
-    parser.add_argument("--balance", type=float, default=200.0)
+    parser.add_argument("--balance", type=float, default=10000.0)
     parser.add_argument("--dca", type=float, default=150.0)
     args = parser.parse_args()
 
@@ -47,7 +47,7 @@ def run_dca_portfolio_backtest():
         print(f"MT5 Init Failed")
         return
 
-    print(f"💰 DCA BACKTEST STARTING: ${args.balance} + ${args.dca}/mo")
+    print(f"💰 UNIFIED DCA BACKTEST STARTING: ${args.balance}")
     
     data_map = {}
     for sym in symbols:
@@ -91,7 +91,8 @@ def run_dca_portfolio_backtest():
                 s_cfg = config["symbols"][sym]
                 ts, tv = float(s_cfg["point"]), float(s_cfg["contract_size"]) * float(s_cfg["point"])
                 
-                lot = risk_manager.calculate_lot_percent(sym, balance, 0, abs(sig.entry - sig.sl), ts, tv)
+                # --- CALL UNIFIED CALCULATE_LOT (Exactly like Live) ---
+                lot = risk_manager.calculate_lot(sym, balance, 0, abs(sig.entry - sig.sl), ts, tv, sig.confidence)
                 
                 next_bar = df.iloc[idx+1]
                 if sig.action == "BUY":
@@ -125,7 +126,7 @@ def run_dca_portfolio_backtest():
     with open(reports_dir / f"dca_report_{timestamp}.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=4)
 
-    print(f"💰 FINAL EQUITY: ${balance:,.2f} | PROFIT: ${summary['total_profit']:,.2f}")
+    print(f"🏁 FINISHED! FINAL EQUITY: ${balance:,.2f} | MaxDD: {max_dd:.1f}%")
     mt5.shutdown()
 
 if __name__ == "__main__":

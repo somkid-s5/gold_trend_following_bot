@@ -1,5 +1,5 @@
 # =============================================================================
-# GOLD TREND FOLLOWING BOT - TITAN v9 FIXED RATIO (100K MASTERPIECE)
+# TITAN GOLD BERSERKER - UNIFIED PRODUCTION CONFIG
 # =============================================================================
 
 mt5:
@@ -21,40 +21,41 @@ trading:
     trend_following: 3000
 
 risk:
-  risk_per_trade_pct: 3.0      
+  risk_per_trade_pct: 2.0      
   max_daily_loss_pct: 15.0     
   max_total_drawdown_pct: 50.0 
-  max_spread_points: 350       # Tighter spread limit for Standard account
+  max_spread_points: 350       
   close_all_on_daily_limit: true
   allow_live_trading: true
   allow_strategy_addons:
-    trend_following: 3         # Allow up to 3 entries in a strong trend
+    trend_following: 3
+  scaling_delta: 300.0         # ทุกกำไร $300 เพิ่ม 0.05 Lot (UNIFIED ACROSS BT/LIVE)
   breakeven_rr_trigger: 1.0    
   trailing_stop_atr_multiple: 1.5
 
 strategies:
   trend_following:
-    timeframe: "M15"
+    timeframe: "H1"
     fast_ema: 34
-    slow_ema: 144
+    slow_ema: 150
     rsi_period: 14
     rsi_buy_level: 35
     rsi_sell_level: 65
     atr_period: 14
     atr_sl_multiplier: 2.5
-    take_profit_rr: 10.0       # AIM FOR THE TITAN 100K 
+    take_profit_rr: 8.0
 
 backtest:
   initial_balance: 10000.0
   fee_per_lot: 0.0 
   start_date: "2016-01-01"
-# THE TITAN ARMY SYMBOLS (GOLD ONLY FOR MAXIMUM GROWTH)
+
 symbols:
   XAUUSDm:
     point: 0.01
     contract_size: 100
     min_lot: 0.01
-    max_lot: 100.0
+    max_lot: 50.0
     lot_step: 0.01
 
 news_filter:
@@ -66,3 +67,4 @@ news_filter:
 notifications:
   telegram:
     enabled: true
+    summary_time_utc: "21:00"

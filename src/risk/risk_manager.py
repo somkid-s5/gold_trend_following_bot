@@ -38,55 +38,55 @@ class RiskManager:
             self.consecutive_losses = 0
             self.consecutive_wins += 1
 
-    def calculate_lot_percent(
+    def calculate_lot(
         self,
         symbol: str,
         equity: float,
-        risk_pct: float,
+        risk_pct: float, # This is still here for fallback, but we prioritize config logic
         sl_distance_price: float,
         tick_size: float | None = None,
         tick_value: float | None = None,
         confidence_multiplier: float = 1.0,
     ) -> float:
         """
-        v19 STANDARD $200 STARTER SIZING
-        Optimized for small accounts on Exness Standard.
+        🚀 UNIFIED PRODUCTION SCALING (v19 TITAN OVERDRIVE)
+        This same logic is used in BOTH Backtest and Live modes.
         """
         if sl_distance_price <= 0: return 0.01
         s_cfg = self.symbols_config.get(symbol, next(iter(self.symbols_config.values())))
 
-        # --- v19 SMALL ACCOUNT OVERDRIVE ---
-        # Starting with 0.02 Lot (Safe for $200)
-        # Increase 0.01 Lot for every $100 Profit
-        base_lot = 0.02
+        # 1. FIXED RATIO SCALING LOGIC
+        base_lot = 0.05
+        # Scaling speed from config or default $1000
+        profit_delta = float(self.config.get("scaling_delta", 1000.0))
         
-        if self.realized_trading_profit < 2000.0:
-            # Phase 1: Growth from small base
-            num_increments = int(self.realized_trading_profit / 100.0)
-            calculated_lot = base_lot + (num_increments * 0.01)
-        else:
-            # Phase 2: Overdrive (Profit > $2000)
-            calculated_lot = 0.2 + (int((self.realized_trading_profit - 2000) / 100) * 0.02)
+        num_increments = int(self.realized_trading_profit / profit_delta)
+        scaled_lot = base_lot + (num_increments * 0.05)
 
-        # Win Streak Cap Protection
+        # 2. HARD RISK CAP (Safety First - Max 4% per trade)
         max_risk_pct = 4.0 
         risk_amount = float(equity) * (max_risk_pct / 100.0)
         ts = float(tick_size or s_cfg.get("point", 0.01))
         tv = float(tick_value or (s_cfg.get("contract_size", 100) * ts))
         max_allowed_lot = risk_amount / ((sl_distance_price / ts) * tv)
 
-        final_lot = min(calculated_lot, max_allowed_lot)
+        # Use the safer (smaller) lot size
+        final_lot = min(scaled_lot, max_allowed_lot)
         
+        # 3. WIN STREAK BOOST
+        if self.consecutive_wins >= 2:
+            final_lot = min(final_lot * 1.5, max_allowed_lot)
+
         step = float(s_cfg.get("lot_step", 0.01))
         final_lot = (final_lot // step) * step
         
-        return round(max(0.01, min(100.0, final_lot)), 2)
-
-    def calculate_lot(self, *args, **kwargs):
-        return self.calculate_lot_percent(*args, risk_pct=3.0, **kwargs)
+        return round(max(0.01, min(50.0, final_lot)), 2)
 
     def check_correlation(self, symbol: str, open_positions: list[dict[str, Any]]) -> RiskDecision:
-        if len(open_positions) >= 2: return RiskDecision(False, "Overdrive Cap")
+        groups = {"USD": ["XAUUSDm", "GBPUSDm", "EURUSDm"]}
+        open_syms = [pos["symbol"] for pos in open_positions]
+        count = sum(1 for s in open_syms if s in groups["USD"])
+        if count >= 2: return RiskDecision(False, "Correlation Limit")
         return RiskDecision(True)
 
     def total_drawdown_pct(self, equity: float) -> float:
@@ -94,17 +94,21 @@ class RiskManager:
         return max(0.0, ((self.peak_equity - equity) / self.peak_equity) * 100)
 
     def check_daily_dd(self, equity: float) -> RiskDecision:
+        threshold = float(self.config.get("max_daily_loss_pct", 10.0))
         if not self.start_of_day_balance: return RiskDecision(True)
         dd = ((self.start_of_day_balance - equity) / self.start_of_day_balance) * 100
-        if dd >= 15.0: return RiskDecision(False, f"Daily limit: {dd:.1f}%")
+        if dd >= threshold: return RiskDecision(False, f"Daily limit: {dd:.1f}%")
         return RiskDecision(True)
 
     def check_total_dd(self, equity: float) -> RiskDecision:
+        threshold = float(self.config.get("max_total_drawdown_pct", 50.0))
         dd = self.total_drawdown_pct(equity)
-        if dd >= 40.0: return RiskDecision(False, f"Safety Halt: {dd:.1f}%")
+        if dd >= threshold: return RiskDecision(False, f"Global Halt: {dd:.1f}%")
         return RiskDecision(True)
 
     def check_spread(self, spread_points: float) -> RiskDecision:
+        max_s = float(self.config.get("max_spread_points", 500))
+        if spread_points > max_s: return RiskDecision(False, f"Spread: {spread_points:.1f}")
         return RiskDecision(True)
 
     def news_filter(self, now_utc: datetime, news_cfg: dict[str, Any]) -> RiskDecision:
@@ -122,3 +126,7 @@ class RiskManager:
         m = 1.5
         if action.upper() == "BUY": return current_price - (atr_value * m)
         return current_price + (atr_value * m)
+
+    def get_total_invested_capital(self) -> float:
+        # This will be overridden or called by the connector in live mode
+        return 0.0 
