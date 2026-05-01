@@ -45,7 +45,6 @@ class TradingEngine:
         self.mode = mode
         self.last_bar_time: dict[str, pd.Timestamp] = {}
         
-        # Use .get() with defaults to avoid KeyError during initialization
         news_cfg = config.get("news_filter", {"enabled": False, "high_impact_events": []})
         self.news_calendar = NewsCalendar(news_cfg)
         self.guard_evaluator = OperationalGuardEvaluator(config.get("operational_guards", {}))
@@ -56,28 +55,6 @@ class TradingEngine:
             raise ValueError("Live mode requires MT5Connector")
         snapshot = self.connector.get_account_info()
         self.risk_manager.update_equity_state(snapshot.balance, snapshot.equity)
-
-        # Update trade outcomes from history to sync consecutive losses
-        strategy_name = self.config.get("forward_test", {}).get("strategy", "trend_following")
-        try:
-            # Look back 2 days to be sure we catch the last closed trade
-            history = self.connector.get_strategy_closed_trades(
-                symbol=self.config["trading"]["symbol"],
-                strategy_name=strategy_name,
-                lookback_days=2,
-                current_balance=snapshot.balance
-            )
-            
-            # CRITICAL: Always use 'pnl' column as defined in MT5Connector.get_strategy_closed_trades
-            if not history.empty and "pnl" in history.columns:
-                last_trade_pnl = float(history.iloc[-1]["pnl"])
-                self.risk_manager.update_trade_outcome(last_trade_pnl)
-            elif not history.empty:
-                self.logger.warning("History found but 'pnl' column missing. Columns: %s", history.columns.tolist())
-                
-        except Exception as exc:
-            self.logger.warning("Failed to sync trade history: %s", exc)
-
         return snapshot.balance, snapshot.equity
 
     def _passes_risk(self, spread_points: float, now_utc: datetime, equity: float) -> RiskDecision:
@@ -93,137 +70,14 @@ class TradingEngine:
         return RiskDecision(True)
 
     def _strategy_positions(self, symbol: str, strategy_name: str) -> list[dict[str, Any]]:
-        if self.connector is None:
-            return []
+        if self.connector is None: return []
         positions = self.connector.get_positions(symbol)
         return [pos for pos in positions if strategy_name in pos.get("comment", "")]
 
-    def _refresh_news_events(self) -> None:
-        try:
-            self.config["news_filter"]["resolved_events"] = self.news_calendar.get_events()
-        except Exception as exc:
-            self.logger.warning("News event refresh failed: %s", exc)
-
-    def _close_all_positions(self, symbol: str) -> list[EngineResult]:
-        if self.connector is None:
-            return []
-        results: list[EngineResult] = []
-        for position in self.connector.get_positions(symbol):
-            ticket = int(position["ticket"])
-            self.connector.close_position(ticket)
-            strategy = position.get("comment", "portfolio_guard")
-            results.append(EngineResult(strategy, "closed", f"Closed ticket {ticket} after risk breach"))
-        return results
-
-    def _write_runtime_status(self, payload: dict[str, Any]) -> None:
-        runtime_cfg = self.config.get("runtime", {})
-        if not runtime_cfg.get("write_heartbeat", False):
-            return
-        output_path = Path(runtime_cfg.get("heartbeat_path", "reports/runtime_status.json"))
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
-    def _refresh_operational_guard_report(self, symbol: str, balance: float) -> None:
-        guard_cfg = self.config.get("operational_guards", {})
-        if not guard_cfg.get("enabled", False) or self.connector is None:
-            return
-        strategy_name = self.config.get("forward_test", {}).get("strategy", "trend_following")
-        trades = self.connector.get_strategy_closed_trades(
-            symbol=symbol,
-            strategy_name=strategy_name,
-            lookback_days=int(guard_cfg.get("lookback_days", 365)),
-            current_balance=balance,
-        )
-        status = self.guard_evaluator.evaluate_trade_frame(trades, base_balance=balance)
-        output_path = Path(guard_cfg.get("guard_report_path", "reports/guard_status.json"))
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-            "status": status.status,
-            "reasons": status.reasons,
-            "metrics": status.metrics,
-            "source": "mt5_history_auto",
-            "strategy": strategy_name,
-        }
-        output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
-    def _check_operational_pause(self, symbol: str) -> list[EngineResult]:
-        guard_cfg = self.config.get("operational_guards", {})
-        if not guard_cfg.get("enabled", False):
-            return []
-        guard_path = guard_cfg.get("guard_report_path")
-        if not guard_path:
-            return []
-        status = self.guard_evaluator.load_guard_file(Path(guard_path))
-        if status is None or status.status != "PAUSE":
-            return []
-
-        results = [EngineResult("portfolio", "paused", "; ".join(status.reasons))]
-        if guard_cfg.get("close_positions_on_trigger", False):
-            results.extend(self._close_all_positions(symbol))
-        return results
-
-    def _load_guard_payload(self) -> dict[str, Any] | None:
-        guard_path = self.config.get("operational_guards", {}).get("guard_report_path")
-        if not guard_path:
-            return None
-        path = Path(guard_path)
-        if not path.exists():
-            return None
-        return json.loads(path.read_text(encoding="utf-8"))
-
-    def _maybe_send_guard_alert(self, guard_payload: dict[str, Any] | None) -> None:
-        if self.notifier is None or not self.notifier.is_enabled():
-            return
-        tg_cfg = self.config.get("notifications", {}).get("telegram", {})
-        if not tg_cfg.get("send_guard_alerts", True) or not guard_payload:
-            return
-        state = self.notifier.load_state()
-        guard_status = guard_payload.get("status")
-        if guard_status == "PAUSE" and state.get("last_guard_alert_status") != "PAUSE":
-            text = self.notifier.build_event_message(
-                "Guard Alert",
-                datetime.now(timezone.utc),
-                f"สถานะ PAUSE | เหตุผล: {', '.join(guard_payload.get('reasons', []))}"      
-            )
-            self.notifier.send_message(text)
-            state["last_guard_alert_status"] = "PAUSE"
-            self.notifier.save_state(state)
-        elif guard_status == "OK" and state.get("last_guard_alert_status") == "PAUSE":
-            state["last_guard_alert_status"] = "OK"
-            self.notifier.save_state(state)
-
-    def _maybe_send_daily_summary(self, symbol: str, balance: float, equity: float, now_utc: datetime) -> None: 
-        if self.notifier is None or not self.notifier.should_send_daily_summary(now_utc):
-            return
-        if self.connector is None:
-            return
-        strategy_name = self.config.get("forward_test", {}).get("strategy", "trend_following")
-        trades = self.connector.get_strategy_closed_trades(
-            symbol=symbol,
-            strategy_name=strategy_name,
-            lookback_days=2,
-            current_balance=balance,
-        )
-        if not trades.empty:
-            trades = trades.loc[trades["time"].dt.date == now_utc.date()].copy()
-        guard_payload = self._load_guard_payload()
-        text = self.notifier.build_daily_summary(
-            strategy_name=strategy_name,
-            now_utc=now_utc,
-            account={"balance": balance, "equity": equity},
-            guard_payload=guard_payload,
-            trades_frame=trades,
-        )
-        self.notifier.send_message(text)
-        self.notifier.mark_daily_summary_sent(now_utc)
-
     def _manage_open_positions(self, symbol: str, frame: pd.DataFrame, strategy_name: str) -> list[EngineResult]:
-        if self.connector is None:
-            return []
+        if self.connector is None: return []
         positions = self._strategy_positions(symbol, strategy_name)
-        if not positions:
-            return []
+        if not positions: return []
 
         atr_series = frame.get("atr")
         atr_value = float(atr_series.iloc[-1]) if atr_series is not None else float(frame["high"].iloc[-1] - frame["low"].iloc[-1])
@@ -237,45 +91,87 @@ class TradingEngine:
             entry_price = float(position["price_open"])
             current_sl = float(position["sl"])
             current_tp = float(position["tp"])
-            breakeven_trigger = self.risk_manager.breakeven_price(entry_price, current_sl, action)
-            move_to_be = current_price >= breakeven_trigger if action == "BUY" else current_price <= breakeven_trigger
+            
+            # Smart Exit Logic from v3
+            risk_dist = abs(entry_price - current_sl) if current_sl > 0 else (atr_value * 2.0)
+            be_trigger = entry_price + (risk_dist * 1.5) if action == "BUY" else entry_price - (risk_dist * 1.5)
+            
             new_sl = current_sl
-
-            if move_to_be:
-                new_sl = max(current_sl, entry_price) if action == "BUY" else min(current_sl, entry_price)      
-
-            trailing_candidate = self.risk_manager.trailing_stop_price(current_price, atr_value, action)        
-            if action == "BUY" and trailing_candidate > new_sl + point:
-                new_sl = trailing_candidate
-            if action == "SELL" and (new_sl == 0 or trailing_candidate < new_sl - point):
-                new_sl = trailing_candidate
+            if (action == "BUY" and current_price >= be_trigger) or (action == "SELL" and current_price <= be_trigger):
+                new_sl = max(current_sl, entry_price) if action == "BUY" else min(current_sl, entry_price)
 
             if abs(new_sl - current_sl) >= point:
                 self.connector.modify_position(int(position["ticket"]), sl=new_sl, tp=current_tp)
-                results.append(
-                    EngineResult(
-                        strategy_name,
-                        "managed",
-                        f"Updated SL for ticket {position['ticket']} to {new_sl:.2f}",
-                    )
-                )
-
+                results.append(EngineResult(strategy_name, "managed", f"Updated SL for {symbol} ticket {position['ticket']}"))
         return results
 
-    def _is_new_bar(self, strategy_name: str, frame: pd.DataFrame) -> bool:
-        current = frame.iloc[-1]["time"]
-        previous = self.last_bar_time.get(strategy_name)
-        if previous is not None and current <= previous:
-            return False
-        self.last_bar_time[strategy_name] = current
-        return True
+    def run_portfolio(self) -> list[EngineResult]:
+        if self.mode != "live" or self.connector is None:
+            raise ValueError("run_portfolio is for live mode with connector only")
+
+        try:
+            balance, equity = self._live_account_state()
+            now_utc = datetime.now(timezone.utc)
+            results: list[EngineResult] = []
+            
+            self.logger.info("=" * 60)
+            self.logger.info("PORTFOLIO STATUS | %s", now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"))
+            self.logger.info("ACCOUNT          | Bal: %.2f | Eq: %.2f", balance, equity)
+            self.logger.info("-" * 60)
+
+            symbol_list = list(self.config.get("symbols", {}).keys())
+            for symbol in symbol_list:
+                for name, strategy in self.strategies.items():
+                    history_count = int(self.config["trading"]["history_bars"].get(name, 1500))
+                    frame = self.data_handler.get_live_bars(symbol, strategy.timeframe, history_count)
+                    
+                    if frame.empty: 
+                        self.logger.warning("DATA ERROR   | %s: No bars returned", symbol)
+                        continue
+                    
+                    # 1. Position Management
+                    results.extend(self._manage_open_positions(symbol, frame, name))
+
+                    # 2. Risk & Market Condition Check
+                    all_open = self.connector.get_positions()
+                    corr_decision = self.risk_manager.check_correlation(symbol, all_open)
+                    if not corr_decision.allowed:
+                        self.logger.info("SKIP %s | %s", symbol, corr_decision.reason)
+                        continue
+
+                    symbol_info = self.connector.get_symbol_info(symbol)
+                    tick = self.connector.get_symbol_tick(symbol)
+                    spread = (float(tick.ask) - float(tick.bid)) / (float(symbol_info.point) or 0.01)
+                    
+                    self.logger.info("SCANNING     | %s | Price: %.2f | Spread: %.1f", symbol, frame["close"].iloc[-1], spread)
+                    
+                    decision = self._passes_risk(spread, now_utc, equity)
+                    if not decision.allowed:
+                        self.logger.info("RISK BLOCK   | %s: %s", symbol, decision.reason)
+                        continue
+
+                    # 3. Execution Check
+                    existing = self._strategy_positions(symbol, name)
+                    if len(existing) >= int(self.config["risk"]["allow_strategy_addons"].get(name, 1)):
+                        continue
+
+                    signals = strategy.generate_signals(frame, {"symbol": symbol})
+                    if signals:
+                        best = max(signals, key=lambda x: x.confidence)
+                        results.append(self._execute_signal(symbol, best, equity))
+                        balance, equity = self._live_account_state() 
+            
+            return results
+
+        except Exception as exc:
+            self.logger.error("CRITICAL PORTFOLIO ERROR: %s", exc, exc_info=True)
+            return [EngineResult("system", "error", str(exc))]
 
     def _execute_signal(self, symbol: str, signal: Signal, equity: float) -> EngineResult:
-        if self.connector is None:
-            raise ValueError("Signal execution requires MT5Connector")
         symbol_info = self.connector.get_symbol_info(symbol)
         sl_distance = abs(signal.entry - signal.sl)
         lot = self.risk_manager.calculate_lot(
+            symbol=symbol,
             equity=equity,
             risk_pct=float(self.config["risk"]["risk_per_trade_pct"]),
             sl_distance_price=sl_distance,
@@ -283,7 +179,7 @@ class TradingEngine:
             tick_value=float(symbol_info.trade_tick_value or (symbol_info.contract_size * symbol_info.point)),  
             confidence_multiplier=signal.confidence,
         )
-        result = self.connector.send_order(
+        self.connector.send_order(
             symbol=symbol,
             action=signal.action,
             volume=lot,
@@ -291,79 +187,4 @@ class TradingEngine:
             tp=signal.tp,
             comment=f"{signal.strategy}|conf={signal.confidence:.2f}",
         )
-        self.logger.info("Order sent: %s", result)
-        return EngineResult(signal.strategy, "executed", f"{signal.action} {lot} lots")
-
-    def run(self, symbol: str, strategy_name: str | None = None) -> list[EngineResult]:
-        """Main execution loop for live trading."""
-        if self.mode != "live":
-            raise ValueError("TradingEngine.run is for live mode only")
-
-        try:
-            balance, equity = self._live_account_state()
-            now_utc = datetime.now(timezone.utc)
-            results: list[EngineResult] = []
-
-            # --- PRODUCTION DASHBOARD ---
-            daily_dd = self.risk_manager.daily_drawdown_pct(equity)
-            total_dd = self.risk_manager.total_drawdown_pct(equity)
-            streak = self.risk_manager.consecutive_losses
-
-            self.logger.info("=" * 60)
-            self.logger.info("LIVE STATUS | %s | %s", symbol.upper(), now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"))
-            self.logger.info("ACCOUNT     | Bal: %.2f | Eq: %.2f | DD: %.2f%%", balance, equity, total_dd)
-            self.logger.info("RISK        | Daily Loss: %.2f%% | Streak: %d", daily_dd, streak)
-            self.logger.info("-" * 60)
-
-            self._refresh_news_events()
-
-            # Run Strategies
-            for name, strategy in self.strategies.items():
-                if strategy_name and name != strategy_name:
-                    continue
-
-                history_count = int(self.config["trading"]["history_bars"][name])
-                frame = self.data_handler.get_live_bars(symbol, strategy.timeframe, history_count)
-
-                if not self._is_new_bar(name, frame):
-                    continue
-
-                # Position Management
-                frame_for_management = frame.copy()
-                frame_for_management["atr"] = atr(frame_for_management, 14)
-                results.extend(self._manage_open_positions(symbol, frame_for_management, name))
-
-                # Market Conditions
-                symbol_info = self.connector.get_symbol_info(symbol)
-                tick = self.connector.get_symbol_tick(symbol)
-                spread_points = (float(tick.ask) - float(tick.bid)) / float(symbol_info.point or 0.01)
-
-                existing_positions = self._strategy_positions(symbol, name)
-                max_pos = int(self.config["risk"]["allow_strategy_addons"].get(name, 1))
-
-                last_price = float(frame["close"].iloc[-1])
-                self.logger.info("SCANNING    | %s | Price: %.2f | Spr: %.1f | Pos: %d/%d",
-                                 name.upper(), last_price, spread_points, len(existing_positions), max_pos)     
-
-                # Final Risk Check before Signal Generation
-                decision = self._passes_risk(spread_points, now_utc, equity)
-                if not decision.allowed:
-                    self.logger.info("FILTERED    | %s", decision.reason)
-                    continue
-
-                if len(existing_positions) >= max_pos:
-                    continue
-
-                # Signal Execution
-                signals = strategy.generate_signals(frame, {})
-                if signals:
-                    best_signal = max(signals, key=lambda item: item.confidence)
-                    results.append(self._execute_signal(symbol, best_signal, equity))
-                else:
-                    self.logger.info("IDLE        | %s: No signal", name.upper())
-
-            return results
-
-        except Exception as exc:
-            self.logger.error("CRITICAL ERROR in Live Loop: %s", exc, exc_info=True)
-            return [EngineResult("system", "error", str(exc))]
+        return EngineResult(signal.strategy, "executed", f"{symbol} {signal.action} {lot} lots")

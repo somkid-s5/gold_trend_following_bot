@@ -18,3 +18,9 @@
 - **Performance:** **$25,081 profit (10 years)**
 - **Max Drawdown:** **39.76%** (Very Stable)
 - **Characteristics:** The ultimate balance of high accuracy (53.5%) and aggressive compounding. This is the master version.
+
+## 💀 feat/institutional-grade-v4-100k [Failed Titan Experiments]
+- **Attempts:** Titan Mode (10% Base Risk), Sniper Assassin (8.0 RR), Quantum Moonshot (Mean Reversion).
+- **Results:** Port crashed or severely depleted in all scenarios. 
+- **Conclusion:** Market volatility on H1 is too high for >5% base risk. Hyper-aggression leads to geometric ruin.
+- **The True Path to $100k:** Scale this bot across 4 uncorrelated symbols (XAUUSD, GBPUSD, EURUSD, BTCUSD) using the stable v3-hyper logic. 4 x $25k = $100k with low risk.

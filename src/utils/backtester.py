@@ -91,6 +91,7 @@ class Backtester:
             signal = max(signals, key=lambda item: item.confidence)
             
             lot = self.risk_manager.calculate_lot(
+                symbol=symbol,
                 equity=balance,
                 risk_pct=risk_pct,
                 sl_distance_price=abs(signal.entry - signal.sl),
