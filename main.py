@@ -46,6 +46,11 @@ def apply_env_overrides(config: dict[str, Any]) -> dict[str, Any]:
         if os.getenv(k):
             val = os.getenv(k)
             mt5_cfg[k.replace("MT5_", "").lower()] = int(val) if "LOGIN" in k else val
+            
+    # FIXED: 9
+    if mt5_cfg.get("login", 0) == 0:
+        raise EnvironmentError("MT5_LOGIN is missing or 0. Please set it in .env")
+        
     return config
 
 

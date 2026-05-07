@@ -14,10 +14,11 @@ if str(ROOT) not in sys.path:
 from main import load_config, build_strategy
 from src.risk.risk_manager import RiskManager
 
-def fetch_history(symbol, days):
+def fetch_history(symbol, days, timeframe="H1"):
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=days)
-    rates = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_H1, start, end)
+    mt5_tf = getattr(mt5, f"TIMEFRAME_{timeframe}", mt5.TIMEFRAME_H1)
+    rates = mt5.copy_rates_range(symbol, mt5_tf, start, end)
     if rates is None or len(rates) == 0:
         return pd.DataFrame()
     df = pd.DataFrame(rates)
@@ -29,6 +30,8 @@ def run_dca_portfolio_backtest():
     parser.add_argument("--days", type=int, default=365)
     parser.add_argument("--balance", type=float, default=10000.0)
     parser.add_argument("--dca", type=float, default=150.0)
+    parser.add_argument("--timeframe", default="H1")
+    parser.add_argument("--risk", type=float)
     args = parser.parse_args()
 
     # Load Env
@@ -36,6 +39,11 @@ def run_dca_portfolio_backtest():
     load_dotenv(ROOT / ".env")
 
     config = load_config(ROOT / "config" / "config.yaml")
+    
+    if args.risk:
+        config["risk"]["base_risk_pct"] = args.risk
+    config["strategies"]["trend_following"]["timeframe"] = args.timeframe
+    
     symbols = list(config["symbols"].keys())
     
     if not mt5.initialize(
@@ -47,12 +55,12 @@ def run_dca_portfolio_backtest():
         print(f"MT5 Init Failed")
         return
 
-    print(f"💰 UNIFIED DCA BACKTEST STARTING: ${args.balance}")
+    print(f"UNIFIED DCA BACKTEST STARTING: ${args.balance}")
     
     data_map = {}
     for sym in symbols:
-        print(f"📦 Fetching {sym}...")
-        df = fetch_history(sym, args.days)
+        print(f"Fetching {sym}...")
+        df = fetch_history(sym, args.days, args.timeframe)
         if not df.empty:
             data_map[sym] = df
 
@@ -126,7 +134,7 @@ def run_dca_portfolio_backtest():
     with open(reports_dir / f"dca_report_{timestamp}.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=4)
 
-    print(f"🏁 FINISHED! FINAL EQUITY: ${balance:,.2f} | MaxDD: {max_dd:.1f}%")
+    print(f"FINISHED! FINAL EQUITY: ${balance:,.2f} | MaxDD: {max_dd:.1f}%")
     mt5.shutdown()
 
 if __name__ == "__main__":

@@ -70,24 +70,36 @@ class TelegramNotifier:
         state[f"event_{event_key}_sent_at"] = now_utc.isoformat()
         self.save_state(state)
 
+    # FIXED: 7
     def send_message(self, text: str) -> bool:
         if not self.is_enabled():
             self.logger.info("Telegram notifier disabled or missing credentials.")
             return False
+            
+        import time
         url = f"https://api.telegram.org/bot{self._bot_token()}/sendMessage"
-        response = requests.post(
-            url,
-            json={
-                "chat_id": self._chat_id(),
-                "text": text,
-                "parse_mode": "Markdown",
-                "disable_web_page_preview": True,
-            },
-            timeout=15,
-        )
-        response.raise_for_status()
-        return True
+        
+        for attempt in range(3):
+            try:
+                response = requests.post(
+                    url,
+                    json={
+                        "chat_id": self._chat_id(),
+                        "text": text,
+                        "parse_mode": "Markdown",
+                        "disable_web_page_preview": True,
+                    },
+                    timeout=15,
+                )
+                response.raise_for_status()
+                return True
+            except Exception as e:
+                self.logger.warning(f"Telegram send failed (attempt {attempt+1}/3): {e}")
+                if attempt < 2:
+                    time.sleep(2)
+        return False
 
+    # FIXED: 5
     def build_daily_summary(
         self,
         strategy_name: str,
@@ -95,10 +107,10 @@ class TelegramNotifier:
         account: dict[str, Any],
         guard_payload: dict[str, Any] | None,
         trades_frame: Any,
-        connector: Any, # Pass connector to fetch history
+        connector: Any = None, # Pass connector to fetch history
     ) -> str:
         # AUTOMATICALLY fetch Invested Capital from MT5 History
-        invested = connector.get_total_invested_capital()
+        invested = connector.get_total_invested_capital() if connector else 0.0
         
         total_trades = int(len(trades_frame)) if trades_frame is not None else 0
         day_profit = float(trades_frame["pnl"].sum()) if trades_frame is not None and not trades_frame.empty else 0.0
@@ -109,17 +121,18 @@ class TelegramNotifier:
         profit_emoji = "📈" if net_profit >= 0 else "📉"
         
         return (
-            f"📊 *TITAN WEALTH REPORT*\n"
+            f"📊 *สรุปรายวัน XAUUSD*\n"
             f"🗓 วันที่: `{now_utc.date().isoformat()}`\n"
+            f"🤖 Strategy: `{strategy_name}`\n"
             f"--- 🏦 ACCOUNTS ---\n"
-            f"💰 Equity รวม: `${equity:,.2f}`\n"
-            f"🏛️ ทุนที่เติม (Auto-Detected): `${invested:,.2f}`\n"
-            f"{profit_emoji} กำไรสะสม: `${net_profit:,.2f}`\n"
+            f"💰 Equity รวม: `${equity:.2f}`\n"
+            f"🏛️ ทุนที่เติม (Auto-Detected): `${invested:.2f}`\n"
+            f"{profit_emoji} กำไรสะสม: `${net_profit:.2f}`\n"
             f"--- 🎯 TODAY ---\n"
             f"🧾 ไม้ที่ปิดวันนี้: `{total_trades}`\n"
-            f"💵 กำไรวันนี้: `${day_profit:,.2f}`\n"
+            f"💵 กำไรวันนี้: `${day_profit:.2f}`\n"
             f"--- 🛡️ GUARD ---\n"
-            f"🚦 สถานะ: `{guard_payload.get('status', 'OK') if guard_payload else 'OK'}`"
+            f"🚦 สถานะ Guard: `{guard_payload.get('status', 'OK') if guard_payload else 'OK'}`"
         )
 
     def build_event_message(self, event_name: str, now_utc: datetime, details: str) -> str:

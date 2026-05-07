@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 
@@ -17,7 +18,13 @@ def setup_logger(name: str = "gold_trading_bot", log_dir: str = "logs") -> loggi
     stream_handler.setFormatter(formatter)
     logger.addHandler(stream_handler)
 
-    file_handler = logging.FileHandler(Path(log_dir) / f"{name}.log", encoding="utf-8")
+    # FIXED: 6
+    file_handler = RotatingFileHandler(
+        Path(log_dir) / f"{name}.log",
+        maxBytes=10 * 1024 * 1024,   # 10 MB per file
+        backupCount=5,                # keep last 5 rotated files
+        encoding="utf-8"
+    )
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 

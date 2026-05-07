@@ -47,6 +47,9 @@ def main() -> None:
     parser.add_argument("--symbol", default="XAUUSDm")
     parser.add_argument("--days", type=int, default=365)
     parser.add_argument("--config", default=str(ROOT / "config" / "config.yaml"))
+    parser.add_argument("--balance", type=float)
+    parser.add_argument("--timeframe", choices=["M15", "H1", "H4", "D1"])
+    parser.add_argument("--risk", type=float)
     args = parser.parse_args()
 
     load_dotenv(ROOT / ".env")
@@ -54,8 +57,16 @@ def main() -> None:
     logger = setup_logger("backtest_engine")
     strategy = build_strategy(config)
     
-    tf_str = config["strategies"]["trend_following"].get("timeframe", "H1")
-    mt5_tf = mt5.TIMEFRAME_H1 if tf_str == "H1" else mt5.TIMEFRAME_M15
+    # Overrides
+    if args.balance:
+        config["backtest"]["initial_balance"] = args.balance
+    if args.risk:
+        config["risk"]["base_risk_pct"] = args.risk
+    
+    tf_str = args.timeframe if args.timeframe else config["strategies"]["trend_following"].get("timeframe", "H1")
+    config["strategies"]["trend_following"]["timeframe"] = tf_str
+    
+    mt5_tf = getattr(mt5, f"TIMEFRAME_{tf_str}", mt5.TIMEFRAME_H1)
 
     if not mt5.initialize(
         path=os.getenv("MT5_PATH"),
@@ -94,8 +105,8 @@ def main() -> None:
         with open(summary_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=4)
             
-        print(f"\n✅ DONE! Profit: ${payload['net_profit']} | ROI: {payload['roi_pct']}%")
-        print(f"📄 Report: reports/{summary_path.name}")
+        print(f"\nDONE! Profit: ${payload['net_profit']} | ROI: {payload['roi_pct']}%")
+        print(f"Report: reports/{summary_path.name}")
 
     finally:
         mt5.shutdown()

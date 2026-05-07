@@ -42,5 +42,5 @@ if __name__ == "__main__":
     
     tracker = InvestmentTracker()
     total = tracker.add_deposit(args.amount, args.note)
-    print(f"✅ DEPOSIT RECORDED: +${args.amount:,.2f}")
-    print(f"🏦 TOTAL INVESTED CAPITAL: ${total:,.2f}")
+    print(f"DEPOSIT RECORDED: +${args.amount:,.2f}")
+    print(f"TOTAL INVESTED CAPITAL: ${total:,.2f}")

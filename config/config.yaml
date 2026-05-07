@@ -2,8 +2,9 @@
 # TITAN GOLD BERSERKER - UNIFIED PRODUCTION CONFIG
 # =============================================================================
 
+# FIXED: 9
 mt5:
-  login: 433209659
+  login: 0   # Override via MT5_LOGIN in .env
   password: "CHANGE_ME_IN_ENV"
   server: "Exness-MT5Trial7"
   path: "C:\\Program Files\\MetaTrader 5 EXNESS\\terminal64.exe"

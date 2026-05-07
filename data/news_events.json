@@ -1,10 +1,4 @@
 {
-  "events": [
-    {
-      "time": "2026-03-25T12:30:00+00:00"
-    },
-    {
-      "time": "2026-03-27T12:30:00+00:00"
-    }
-  ]
+  "note": "Update this file with upcoming high-impact events before each trading week.",
+  "events": []
 }

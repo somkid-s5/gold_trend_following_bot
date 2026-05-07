@@ -12,21 +12,24 @@
 - `main.py`: ศูนย์กลางควบคุมบอทในโหมด Live Portfolio
 - `src/strategies/`: สมองกลที่ใช้กรองเทรนด์และจุดเข้าเทรด
 - `src/risk/`: ระบบบริหารเงินระดับสถาบัน (Overdrive Engine)
-- `dashboard.py`: หน้าจอแสดงผล PNL และสถานะพอร์ตแบบสดๆ
+- `api/`: ระบบ Backend (FastAPI) สำหรับเชื่อมต่อ Frontend
+- `frontend/`: ระบบหน้าจอควบคุมแบบ Real-time (React + Vite)
 
 ## 🏁 วิธีเริ่มใช้งาน (Quick Start)
 1. **ติดตั้ง Dependencies:**
    ```bash
    pip install -r requirements.txt
+   cd frontend && npm install
    ```
 2. **ตั้งค่าบัญชี:** แก้ไขไฟล์ `.env` ใส่ MT5 Login, Password และ Server ให้เรียบร้อย
 3. **เริ่มรันบอท (Titan Mode):**
    ```bash
    python main.py --mode live
    ```
-4. **เปิดแผงควบคุม (Dashboard):**
-   ```bash
-   streamlit run dashboard.py
+4. **เปิดแผงควบคุม (Web Dashboard):**
+   ```powershell
+   # ใช้สคริปต์อัตโนมัติเพื่อเปิดทั้ง API และ Frontend
+   powershell ./scripts/start_webapp.ps1
    ```
 
 ---

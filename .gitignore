@@ -1,8 +1,25 @@
+# Environment
 .env
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Runtime output
 logs/
 reports/
+
+# Large data files
 data/real_*.csv
 data/*_180d.csv
 data/*_365d.csv
+
+# IDE
+.vscode/
+.idea/

@@ -24,3 +24,22 @@
 - **Results:** Port crashed or severely depleted in all scenarios. 
 - **Conclusion:** Market volatility on H1 is too high for >5% base risk. Hyper-aggression leads to geometric ruin.
 - **The True Path to $100k:** Scale this bot across 4 uncorrelated symbols (XAUUSD, GBPUSD, EURUSD, BTCUSD) using the stable v3-hyper logic. 4 x $25k = $100k with low risk.
+
+## 🖥️ UI / Dashboard Evolution
+
+### v1.0 [Legacy Streamlit]
+- **Tech:** Python Streamlit
+- **Features:** Static charts, basic config, manual log refresh.
+- **Pros:** Fast to build.
+- **Cons:** Not responsive, limited real-time interaction, "prototype" look.
+
+### v2.0 [Production Dashboard - TITAN BERSERKER]
+- **Tech:** React (Vite) + FastAPI + Tailwind CSS
+- **Features:**
+  - **Real-time Engine Logs:** Integrated terminal with auto-scroll logic.
+  - **Live Performance Monitoring:** Real Balance/Equity/Positions linked to MT5.
+  - **Dynamic Config Editor:** Nested YAML editing with immediate save.
+  - **Real Trade History:** Fetches actual closed trades from MT5 account history.
+  - **Operational Guards:** Live risk metrics (Win rate, Drawdown, Loss streaks).
+- **Design:** Premium dark-mode glassmorphism theme, Inter & JetBrains Mono typography.
+- **Reliability:** Built-in connection state handling and production-ready structure.

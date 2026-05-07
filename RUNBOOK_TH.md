@@ -109,6 +109,8 @@ python .\scripts\run_operational_guard_check.py --trades-csv=reports\trend_follo
 - ใช้บัญชี Demo ก่อน
 - เริ่ม lot เล็ก
 - เช็ก Telegram ทุกวัน
+<!-- FIXED: 10 -->
+- อัพเดท data/news_events.json ก่อนเปิดสัปดาห์ใหม่
 - ถ้า guard เข้า `PAUSE` อย่าฝืนเปิด live ต่อจนกว่าจะเข้าใจสาเหตุ
 
 ## สรุปสั้นๆ

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 
@@ -38,12 +38,13 @@ class RiskManager:
             self.consecutive_losses = 0
             self.consecutive_wins += 1
 
+    # FIXED: 4
     def calculate_lot(
         self,
-        symbol: str,
-        equity: float,
-        risk_pct: float, # This is still here for fallback, but we prioritize config logic
-        sl_distance_price: float,
+        symbol: str = "XAUUSD",
+        equity: float = 0.0,
+        risk_pct: float = 0.0, # This is still here for fallback, but we prioritize config logic
+        sl_distance_price: float = 0.0,
         tick_size: float | None = None,
         tick_value: float | None = None,
         confidence_multiplier: float = 1.0,
@@ -53,7 +54,13 @@ class RiskManager:
         This same logic is used in BOTH Backtest and Live modes.
         """
         if sl_distance_price <= 0: return 0.01
-        s_cfg = self.symbols_config.get(symbol, next(iter(self.symbols_config.values())))
+        s_cfg = self.symbols_config.get(symbol, {})
+        if not isinstance(s_cfg, dict) or not s_cfg:
+            first_val = next(iter(self.symbols_config.values()), None)
+            if isinstance(first_val, dict):
+                s_cfg = first_val
+            else:
+                s_cfg = self.symbols_config
 
         # 1. FIXED RATIO SCALING LOGIC
         base_lot = 0.05
@@ -84,7 +91,7 @@ class RiskManager:
 
     def check_correlation(self, symbol: str, open_positions: list[dict[str, Any]]) -> RiskDecision:
         groups = {"USD": ["XAUUSDm", "GBPUSDm", "EURUSDm"]}
-        open_syms = [pos["symbol"] for pos in open_positions]
+        open_syms = [pos.get("symbol", "") for pos in open_positions]
         count = sum(1 for s in open_syms if s in groups["USD"])
         if count >= 2: return RiskDecision(False, "Correlation Limit")
         return RiskDecision(True)
@@ -111,7 +118,25 @@ class RiskManager:
         if spread_points > max_s: return RiskDecision(False, f"Spread: {spread_points:.1f}")
         return RiskDecision(True)
 
+    # FIXED: 2
     def news_filter(self, now_utc: datetime, news_cfg: dict[str, Any]) -> RiskDecision:
+        if not news_cfg.get("enabled", False):
+            return RiskDecision(True)
+            
+        minutes_before = news_cfg.get("minutes_before", 60)
+        minutes_after = news_cfg.get("minutes_after", 60)
+        
+        for event_str in news_cfg.get("high_impact_events", []):
+            try:
+                event_time = datetime.fromisoformat(event_str)
+                start_window = event_time - timedelta(minutes=minutes_before)
+                end_window = event_time + timedelta(minutes=minutes_after)
+                
+                if start_window <= now_utc <= end_window:
+                    return RiskDecision(False, f"News window blocked: {event_str}")
+            except ValueError:
+                pass
+                
         return RiskDecision(True)
 
     def is_paused_by_circuit_breaker(self, equity: float) -> RiskDecision:
