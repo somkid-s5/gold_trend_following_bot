@@ -22,6 +22,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 COPY api/ ./api/
 COPY config/ ./config/
+COPY data/ ./data/
+COPY scripts/ ./scripts/
 COPY main.py .
 
 # Copy built frontend
