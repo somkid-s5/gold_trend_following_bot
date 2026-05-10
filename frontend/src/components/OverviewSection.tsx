@@ -40,6 +40,26 @@ function generateEquityCurve(balance: number) {
   return data;
 }
 
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: Array<{ value: number; payload: { day: number } }>;
+}
+
+const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="rounded-lg px-3 py-2 text-xs"
+        style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
+        <p className="font-mono text-[var(--color-primary)] font-semibold">
+          ${payload[0].value.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+        </p>
+        <p className="text-[var(--color-text-muted)] text-[10px] mt-0.5">Day {payload[0].payload.day}</p>
+      </div>
+    );
+  }
+  return null;
+};
+
 interface Props {
   apiOnline: boolean;
 }
@@ -72,8 +92,14 @@ export default function OverviewSection({ apiOnline }: Props) {
   }, [apiOnline]);
 
   useEffect(() => {
-    fetchSystemStatus();
     const interval = setInterval(fetchSystemStatus, 10000);
+    
+    // Initial fetch
+    const init = async () => {
+      await fetchSystemStatus();
+    };
+    init();
+
     return () => clearInterval(interval);
   }, [fetchSystemStatus]);
 
@@ -83,21 +109,6 @@ export default function OverviewSection({ apiOnline }: Props) {
   const pnlPct = balance > 0 ? (pnl / balance) * 100 : 0;
   const openPositions = sysStatus.runtime?.open_positions ?? 0;
   const guardStatus = sysStatus.guard?.status ?? 'UNKNOWN';
-
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="rounded-lg px-3 py-2 text-xs"
-          style={{ background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-light)' }}>
-          <p className="font-mono text-[var(--color-primary)] font-semibold">
-            ${payload[0].value.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-          </p>
-          <p className="text-[var(--color-text-muted)] text-[10px] mt-0.5">Day {payload[0].payload.day}</p>
-        </div>
-      );
-    }
-    return null;
-  };
 
   return (
     <section className="animate-fadeInUp">

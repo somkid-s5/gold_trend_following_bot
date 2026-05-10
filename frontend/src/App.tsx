@@ -6,6 +6,14 @@ import LiveView from './components/LiveView';
 import BacktestView from './components/BacktestView';
 import SettingsModal from './components/SettingsModal';
 
+// --- TITAN SECURITY LAYER: Global API Key Injection ---
+axios.interceptors.request.use((config) => {
+  if (config.url?.startsWith(API.BASE)) {
+    config.headers[API.HEADER] = API.KEY;
+  }
+  return config;
+});
+
 interface BotStatus {
   running: boolean;
 }
@@ -30,8 +38,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    fetchStatus();
     const interval = setInterval(fetchStatus, 3000); // Faster refresh for status
+    
+    // Initial fetch wrapped to avoid synchronous setState warning
+    const init = async () => {
+      await fetchStatus();
+    };
+    init();
+
     return () => clearInterval(interval);
   }, [fetchStatus]);
 

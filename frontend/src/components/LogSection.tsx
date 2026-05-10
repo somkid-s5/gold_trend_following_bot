@@ -33,8 +33,14 @@ export default function LogSection({ apiOnline, botRunning }: Props) {
   }, [apiOnline]);
 
   useEffect(() => {
-    fetchLogs();
     const interval = setInterval(fetchLogs, 5000);
+    
+    // Initial fetch
+    const init = async () => {
+      await fetchLogs();
+    };
+    init();
+
     return () => clearInterval(interval);
   }, [fetchLogs]);
 

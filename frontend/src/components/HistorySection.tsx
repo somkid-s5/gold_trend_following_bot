@@ -29,8 +29,14 @@ export default function HistorySection() {
   }, []);
 
   useEffect(() => {
-    fetchTrades();
     const interval = setInterval(fetchTrades, 30000); // refresh every 30s
+    
+    // Initial fetch
+    const init = async () => {
+      await fetchTrades();
+    };
+    init();
+
     return () => clearInterval(interval);
   }, [fetchTrades]);
 

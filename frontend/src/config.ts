@@ -1,8 +1,12 @@
 /** Centralized API configuration */
 const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+const API_KEY = import.meta.env.VITE_API_KEY || 'TITAN_SECURE_BY_DEFAULT_CHANGE_ME';
+const API_KEY_HEADER = 'X-Titan-API-Key';
 
 export const API = {
   BASE: API_BASE,
+  KEY: API_KEY,
+  HEADER: API_KEY_HEADER,
   BOT: {
     STATUS: `${API_BASE}/api/bot/status`,
     START: `${API_BASE}/api/bot/start`,

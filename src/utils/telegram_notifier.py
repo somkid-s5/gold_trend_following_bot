@@ -99,7 +99,7 @@ class TelegramNotifier:
                     time.sleep(2)
         return False
 
-    # FIXED: 5
+    # FIXED: 5 - MINIMALIST & ESSENTIAL
     def build_daily_summary(
         self,
         strategy_name: str,
@@ -107,45 +107,41 @@ class TelegramNotifier:
         account: dict[str, Any],
         guard_payload: dict[str, Any] | None,
         trades_frame: Any,
-        connector: Any = None, # Pass connector to fetch history
+        connector: Any = None,
     ) -> str:
-        # AUTOMATICALLY fetch Invested Capital from MT5 History
         invested = connector.get_total_invested_capital() if connector else 0.0
-        
         total_trades = int(len(trades_frame)) if trades_frame is not None else 0
         day_profit = float(trades_frame["pnl"].sum()) if trades_frame is not None and not trades_frame.empty else 0.0
         
-        # Calculate Wealth Metrics
         equity = float(account['equity'])
         net_profit = equity - invested
-        profit_emoji = "📈" if net_profit >= 0 else "📉"
+        profit_sign = "+" if net_profit >= 0 else ""
+        day_sign = "+" if day_profit >= 0 else ""
         
         return (
-            f"📊 *สรุปรายวัน XAUUSD*\n"
-            f"🗓 วันที่: `{now_utc.date().isoformat()}`\n"
-            f"🤖 Strategy: `{strategy_name}`\n"
-            f"--- 🏦 ACCOUNTS ---\n"
-            f"💰 Equity รวม: `${equity:.2f}`\n"
-            f"🏛️ ทุนที่เติม (Auto-Detected): `${invested:.2f}`\n"
-            f"{profit_emoji} กำไรสะสม: `${net_profit:.2f}`\n"
-            f"--- 🎯 TODAY ---\n"
-            f"🧾 ไม้ที่ปิดวันนี้: `{total_trades}`\n"
-            f"💵 กำไรวันนี้: `${day_profit:.2f}`\n"
-            f"--- 🛡️ GUARD ---\n"
-            f"🚦 สถานะ Guard: `{guard_payload.get('status', 'OK') if guard_payload else 'OK'}`"
+            f"🏆 *TITAN SUMMARY* | `{now_utc.date().isoformat()}`\n"
+            f"```\n"
+            f"EQUITY:  ${equity:,.2f}\n"
+            f"PROFIT:  ${net_profit:,.2f} ({profit_sign}{((net_profit/invested)*100 if invested > 0 else 0):.1f}%)\n"
+            f"──────────────\n"
+            f"TODAY:   ${day_profit:,.2f} ({day_sign}{total_trades} trades)\n"
+            f"STATUS:  {guard_payload.get('status', 'OK') if guard_payload else 'OK'}\n"
+            f"```"
         )
 
+    # FIXED: MINIMALIST EVENT MESSAGES
     def build_event_message(self, event_name: str, now_utc: datetime, details: str) -> str:
         event_map = {
-            "Startup": ("🚀", "บอทเริ่มทำงานแล้ว"),
-            "Shutdown": ("🛑", "บอทหยุดทำงาน"),
-            "Error": ("⚠️", "พบบอทเกิดข้อผิดพลาด"),
-            "Guard Alert": ("⛔", "Guard แจ้งเตือน"),
-            "Test": ("🧪", "ทดสอบระบบ Telegram"),
+            "Startup": "🚀 *SYSTEM START*",
+            "Shutdown": "🛑 *SYSTEM STOP*",
+            "Error": "🔥 *CRITICAL ERROR*",
+            "Guard Alert": "🛡️ *GUARD ACTIVE*",
+            "Test": "🧪 *DIAGNOSTIC*",
         }
-        emoji, title = event_map.get(event_name, ("ℹ️", f"เหตุการณ์ {event_name}"))
+        title = event_map.get(event_name, f"🔔 *{event_name.upper()}*")
+        
         return (
-            f"{emoji} *{title}*\n"
-            f"🕒 เวลา UTC: `{now_utc.isoformat()}`\n"
-            f"📌 รายละเอียด: {details}"
+            f"{title}\n"
+            f"🕒 `{now_utc.strftime('%H:%M:%S')} UTC`\n"
+            f"💬 {details}"
         )

@@ -166,13 +166,39 @@ class TradingEngine:
             self.logger.error("CRITICAL RUN ERROR: %s", exc, exc_info=True)
             return [EngineResult(strategy_name, "error", str(exc))]
 
+    def is_market_open(self, now_utc: datetime) -> bool:
+        """
+        ตรวจสอบว่าตลาดทองคำ (XAUUSD) เปิดอยู่หรือไม่
+        โดยปกติ: เปิดวันจันทร์ 01:00 UTC - ปิดวันศาร์ 23:59 UTC (เช้าวันเสาร์ 00:00)
+        """
+        weekday = now_utc.weekday() # 0=Monday, 6=Sunday
+        hour = now_utc.hour
+
+        # วันเสาร์ (5): ปิดตั้งแต่ 00:00 UTC เป็นต้นไป
+        if weekday == 5:
+            return False
+        # วันอาทิตย์ (6): ปิดทั้งวัน
+        if weekday == 6:
+            return False
+        # วันจันทร์ (0): เปิดตั้งแต่ 01:00 UTC เป็นต้นไป (เช็คเผื่อบางโบรกเปิดช้า)
+        if weekday == 0 and hour < 1:
+            return False
+            
+        return True
+
     def run_portfolio(self) -> list[EngineResult]:
         if self.mode != "live" or self.connector is None:
             raise ValueError("run_portfolio is for live mode with connector only")
 
         try:
-            balance, equity = self._live_account_state()
             now_utc = datetime.now(timezone.utc)
+            
+            # --- MARKET OPEN GUARD ---
+            if not self.is_market_open(now_utc):
+                self.logger.info("MARKET CLOSED | System sleeping until Monday... 😴")
+                return [EngineResult("system", "idle", "Market is closed")]
+
+            balance, equity = self._live_account_state()
             results: list[EngineResult] = []
             
             self.logger.info("=" * 60)

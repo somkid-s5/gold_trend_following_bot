@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { X, Save, AlertTriangle, CheckCircle } from 'lucide-react';
 import { API } from '../config';
@@ -10,19 +10,11 @@ interface Props {
 type SaveState = 'idle' | 'saving' | 'success' | 'error';
 
 export default function SettingsModal({ onClose }: Props) {
-  const [config, setConfig] = useState<any>(null);
+  const [config, setConfig] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<SaveState>('idle');
 
-  useEffect(() => {
-    fetchConfig();
-    // Close on Escape
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
-
-  const fetchConfig = async () => {
+  const fetchConfig = useCallback(async () => {
     try {
       const res = await axios.get(API.CONFIG.GET, { timeout: 5000 });
       setConfig(res.data);
@@ -30,7 +22,19 @@ export default function SettingsModal({ onClose }: Props) {
       console.error('Failed to fetch config:', e);
     }
     setLoading(false);
-  };
+  }, []);
+
+  useEffect(() => {
+    const init = async () => {
+      await fetchConfig();
+    };
+    init();
+    
+    // Close on Escape
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose, fetchConfig]);
 
   const handleSave = async () => {
     setSaveState('saving');
@@ -45,12 +49,13 @@ export default function SettingsModal({ onClose }: Props) {
     }
   };
 
-  const updateField = (path: string[], value: any) => {
-    setConfig((prev: any) => {
+  const updateField = (path: string[], value: string | number) => {
+    setConfig((prev: Record<string, unknown> | null) => {
+      if (!prev) return null;
       const updated = JSON.parse(JSON.stringify(prev));
-      let obj = updated;
+      let obj = updated as Record<string, unknown>;
       for (let i = 0; i < path.length - 1; i++) {
-        obj = obj[path[i]];
+        obj = obj[path[i]] as Record<string, unknown>;
       }
       obj[path[path.length - 1]] = value;
       return updated;
@@ -58,28 +63,6 @@ export default function SettingsModal({ onClose }: Props) {
     setSaveState('idle');
   };
 
-  const InputRow = ({ label, path, type = 'number', step }: { label: string; path: string[]; type?: string; step?: string }) => {
-    let value: any = config;
-    for (const key of path) value = value?.[key];
-
-    return (
-      <div>
-        <label className="block text-[11px] font-semibold text-[var(--color-text-dim)] uppercase tracking-wider mb-1.5">
-          {label}
-        </label>
-        <input
-          type={type}
-          step={step}
-          value={value ?? ''}
-          onChange={(e) => {
-            const v = type === 'number' ? parseFloat(e.target.value) : e.target.value;
-            updateField(path, v);
-          }}
-          className="input-field text-number"
-        />
-      </div>
-    );
-  };
 
   return (
     <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -121,12 +104,12 @@ export default function SettingsModal({ onClose }: Props) {
                   Risk Management
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
-                  <InputRow label="Risk Per Trade (%)" path={['risk', 'risk_per_trade_pct']} step="0.1" />
-                  <InputRow label="Max Daily Loss (%)" path={['risk', 'max_daily_loss_pct']} step="0.1" />
-                  <InputRow label="Max Drawdown (%)" path={['risk', 'max_total_drawdown_pct']} step="0.1" />
-                  <InputRow label="Max Spread (pts)" path={['risk', 'max_spread_points']} step="10" />
-                  <InputRow label="Scaling Delta ($)" path={['risk', 'scaling_delta']} step="10" />
-                  <InputRow label="Breakeven RR Trigger" path={['risk', 'breakeven_rr_trigger']} step="0.1" />
+                  <InputRow label="Risk Per Trade (%)" path={['risk', 'risk_per_trade_pct']} config={config} updateField={updateField} step="0.1" />
+                  <InputRow label="Max Daily Loss (%)" path={['risk', 'max_daily_loss_pct']} config={config} updateField={updateField} step="0.1" />
+                  <InputRow label="Max Drawdown (%)" path={['risk', 'max_total_drawdown_pct']} config={config} updateField={updateField} step="0.1" />
+                  <InputRow label="Max Spread (pts)" path={['risk', 'max_spread_points']} config={config} updateField={updateField} step="10" />
+                  <InputRow label="Scaling Delta ($)" path={['risk', 'scaling_delta']} config={config} updateField={updateField} step="10" />
+                  <InputRow label="Breakeven RR Trigger" path={['risk', 'breakeven_rr_trigger']} config={config} updateField={updateField} step="0.1" />
                 </div>
               </div>
 
@@ -137,12 +120,12 @@ export default function SettingsModal({ onClose }: Props) {
                   Trend Following
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
-                  <InputRow label="Fast EMA" path={['strategies', 'trend_following', 'fast_ema']} />
-                  <InputRow label="Slow EMA" path={['strategies', 'trend_following', 'slow_ema']} />
-                  <InputRow label="RSI Period" path={['strategies', 'trend_following', 'rsi_period']} />
-                  <InputRow label="ATR Period" path={['strategies', 'trend_following', 'atr_period']} />
-                  <InputRow label="ATR SL Multiplier" path={['strategies', 'trend_following', 'atr_sl_multiplier']} step="0.1" />
-                  <InputRow label="Take Profit RR" path={['strategies', 'trend_following', 'take_profit_rr']} step="0.1" />
+                  <InputRow label="Fast EMA" path={['strategies', 'trend_following', 'fast_ema']} config={config} updateField={updateField} />
+                  <InputRow label="Slow EMA" path={['strategies', 'trend_following', 'slow_ema']} config={config} updateField={updateField} />
+                  <InputRow label="RSI Period" path={['strategies', 'trend_following', 'rsi_period']} config={config} updateField={updateField} />
+                  <InputRow label="ATR Period" path={['strategies', 'trend_following', 'atr_period']} config={config} updateField={updateField} />
+                  <InputRow label="ATR SL Multiplier" path={['strategies', 'trend_following', 'atr_sl_multiplier']} config={config} updateField={updateField} step="0.1" />
+                  <InputRow label="Take Profit RR" path={['strategies', 'trend_following', 'take_profit_rr']} config={config} updateField={updateField} step="0.1" />
                 </div>
               </div>
 
@@ -153,8 +136,8 @@ export default function SettingsModal({ onClose }: Props) {
                   Trading
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
-                  <InputRow label="Symbol" path={['trading', 'symbol']} type="text" />
-                  <InputRow label="Poll Interval (sec)" path={['trading', 'poll_seconds']} />
+                  <InputRow label="Symbol" path={['trading', 'symbol']} config={config} updateField={updateField} type="text" />
+                  <InputRow label="Poll Interval (sec)" path={['trading', 'poll_seconds']} config={config} updateField={updateField} />
                 </div>
               </div>
             </>
@@ -194,3 +177,30 @@ export default function SettingsModal({ onClose }: Props) {
     </div>
   );
 }
+
+const InputRow = ({ label, path, config, updateField, type = 'number', step }: { label: string; path: string[]; config: Record<string, unknown> | null; updateField: (path: string[], v: string | number) => void; type?: string; step?: string }) => {
+  let value: unknown = config;
+  if (value && typeof value === 'object') {
+    for (const key of path) {
+      value = (value as Record<string, unknown>)?.[key];
+    }
+  }
+
+  return (
+    <div>
+      <label className="block text-[11px] font-semibold text-[var(--color-text-dim)] uppercase tracking-wider mb-1.5">
+        {label}
+      </label>
+      <input
+        type={type}
+        step={step}
+        value={(value as string | number | undefined) ?? ''}
+        onChange={(e) => {
+          const v = type === 'number' ? parseFloat(e.target.value) : e.target.value;
+          updateField(path, v);
+        }}
+        className="input-field text-number"
+      />
+    </div>
+  );
+};

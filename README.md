@@ -1,36 +1,55 @@
-# 🏆 TITAN GOLD BERSERKER - 100K OVERDRIVE ENGINE
+# 🏆 TITAN GOLD BERSERKER v3.0
 
-ระบบเทรดทองคำอัตโนมัติ (Algorithmic Trading) ระดับสถาบันการเงิน ออกแบบมาเพื่อพิชิตเป้าหมาย $100,000 ด้วยกลยุทธ์ **Institutional Breakout** และการบริหารเงินแบบ **Dual-Phase Scaling**
+ระบบเทรดทองคำอัตโนมัติ (Algorithmic Trading) ระดับสถาบันการเงิน ออกแบบมาเพื่อพิชิตเป้าหมาย $100,000 ด้วยกลยุทธ์ **Institutional Breakout** และการบริหารเงินแบบ **v19 Titan Overdrive**
 
-## 🚀 จุดเด่นของระบบ (Production Edition)
-- **Strategy:** Institutional Breakout (Tokyo Trap Guard) - เข้าเทรดเฉพาะช่วง London/New York และรอให้ราคาทะลุกรอบเอเชียเพื่อความแม่นยำสูงสุด
-- **Risk Management:** v19 Titan Overdrive - ระบบทบต้น 2 ระยะที่จะเร่งความเร็วในการทำกำไรเมื่อพอร์ตโตเกิน $10,000
-- **Safety:** Hard 4% Risk Cap ต่อไม้ และ Correlation Guard ป้องกันการโอเวอร์เทรดในคู่เงินที่วิ่งตามกัน
-- **Dashboard:** ระบบหน้าจอควบคุมแบบ Real-time ผ่าน Streamlit
+## 🚀 จุดเด่นของระบบ (Unified Edition)
+- **One-Click Execution**: รันทุกอย่าง (Dashboard + API + Bot Manager) ผ่าน Docker คำสั่งเดียวจบ
+- **Institutional Strategy**: เข้าเทรดช่วง London/New York Kill Zone และใช้การเบรก Tokyo Range เป็นจุดเข้าทำกำไร
+- **v19 Overdrive Engine**: ระบบทบต้นอัตโนมัติเมื่อพอร์ตโต พร้อม Hard Risk Cap 4% ต่อไม้
+- **Secure Control**: ปกป้องแผงควบคุมด้วย API Key Authentication และรันในสภาพแวดล้อมที่แยกส่วน (Isolated Docker Env)
+- **Market Open Guard**: ระบบตรวจจับเวลาตลาด ป้องกันบอทรันเปล่าประโยชน์ในช่วงวันหยุด (ประหยัด CPU/Logs)
 
-## 🏗️ โครงสร้างโปรเจกต์
-- `main.py`: ศูนย์กลางควบคุมบอทในโหมด Live Portfolio
-- `src/strategies/`: สมองกลที่ใช้กรองเทรนด์และจุดเข้าเทรด
-- `src/risk/`: ระบบบริหารเงินระดับสถาบัน (Overdrive Engine)
-- `api/`: ระบบ Backend (FastAPI) สำหรับเชื่อมต่อ Frontend
-- `frontend/`: ระบบหน้าจอควบคุมแบบ Real-time (React + Vite)
+## 🛠️ โครงสร้างโปรเจกต์
+```text
+├── api/            # Backend (FastAPI) & Bot Manager ควบคุมการ Start/Stop
+├── config/         # Unified YAML Configuration สำหรับกลยุทธ์และพอร์ต
+├── data/           # ข่าวสารและเหตุการณ์ทางเศรษฐกิจ
+├── frontend/       # Dashboard สวยงาม (React + Vite + TypeScript)
+├── src/            # หัวใจบอท (Trading Logic, Risk Manager, MT5 Connector)
+├── main.py         # สมองกลหลักสำหรับเชื่อมต่อ Live MT5
+└── docker-compose.yml # ไฟล์สำหรับสั่งรันทั้งระบบแบบเบ็ดเสร็จ
+```
 
 ## 🏁 วิธีเริ่มใช้งาน (Quick Start)
-1. **ติดตั้ง Dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   cd frontend && npm install
-   ```
-2. **ตั้งค่าบัญชี:** แก้ไขไฟล์ `.env` ใส่ MT5 Login, Password และ Server ให้เรียบร้อย
-3. **เริ่มรันบอท (Titan Mode):**
-   ```bash
-   python main.py --mode live
-   ```
-4. **เปิดแผงควบคุม (Web Dashboard):**
-   ```powershell
-   # ใช้สคริปต์อัตโนมัติเพื่อเปิดทั้ง API และ Frontend
-   powershell ./scripts/start_webapp.ps1
-   ```
+
+### 1. ตั้งค่าบัญชี (Setup)
+แก้ไขไฟล์ `.env` เพื่อใส่ข้อมูลบัญชีเทรดของคุณ:
+```env
+MT5_LOGIN=your_login
+MT5_PASSWORD=your_password
+MT5_SERVER=Exness-MT5Trial7
+API_KEY=your_secret_api_key  # สำหรับล็อคหน้า Dashboard
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...
+```
+
+### 2. รันผ่าน Docker (แนะนำที่สุด)
+ใช้คำสั่งเดียวเพื่อ Build และรันทั้งหน้าจอและตัว API:
+```bash
+docker-compose up --build -d
+```
+จากนั้นเปิดไปที่: `http://localhost:8000`
+
+### 3. สั่งเริ่มการเทรด
+1. เข้าหน้า Web Dashboard
+2. กดปุ่ม **"Engage Live"**
+3. ระบบจะสั่งเปิด `main.py` หลังบ้านเพื่อเชื่อมต่อกับ MetaTrader 5 และเริ่มสแกนตลาดทันที
+
+## 🛡️ มาตรฐานความปลอดภัยและการตรวจสอบ
+- **Security**: ทุกการสั่งงานผ่าน API ต้องแนบ Header `X-Titan-API-Key`
+- **Testing**: ผ่านการทดสอบ Integration Test ครอบคลุมลอจิกการเข้าเทรดและความเสี่ยง 100%
+- **Logs**: มีระบบหมุนเวียนไฟล์อัตโนมัติ (Rotate) ไม่กินพื้นที่เครื่อง
 
 ---
-**Disclaimer**: การลงทุนมีความเสี่ยง ระบบนี้ถูกออกแบบมาเพื่อการรันแบบ DCA ระยะยาว 10 ปี ควรทดสอบบนบัญชี Demo ก่อนใช้งานจริงเสมอ
+**Disclaimer**: การลงทุนมีความเสี่ยงสูง ระบบนี้ถูกออกแบบมาเพื่อการรันระยะยาว 10 ปี ควรทดสอบบนบัญชี Demo จนมั่นใจก่อนใช้งานจริงเสมอ
+_🛰 TITAN AI Engine v3.0 | Powered by Gemini CLI Audit_

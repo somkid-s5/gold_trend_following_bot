@@ -96,8 +96,14 @@ export default function MetricsSection({ apiOnline }: Props) {
   }, [apiOnline]);
 
   useEffect(() => {
-    fetchGuard();
     const interval = setInterval(fetchGuard, 15000);
+    
+    // Initial fetch
+    const init = async () => {
+      await fetchGuard();
+    };
+    init();
+
     return () => clearInterval(interval);
   }, [fetchGuard]);
 

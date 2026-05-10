@@ -46,8 +46,12 @@ export default function BacktestView() {
       } else {
         setError(res.data.message || 'Failed to run backtest');
       }
-    } catch (e: any) {
-      setError(e.response?.data?.detail || e.message || 'Server error');
+    } catch (e) {
+      if (axios.isAxiosError(e)) {
+        setError(e.response?.data?.detail || e.message || 'Server error');
+      } else {
+        setError('An unexpected error occurred');
+      }
     } finally {
       setLoading(false);
     }

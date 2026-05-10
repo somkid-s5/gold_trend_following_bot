@@ -1,8 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from api.routes import bot, config, monitor
+from api.auth import get_api_key
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
@@ -21,10 +22,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# API routes
-app.include_router(bot.router, prefix="/api/bot", tags=["Bot Control"])
-app.include_router(config.router, prefix="/api/config", tags=["Configuration"])
-app.include_router(monitor.router, prefix="/api/monitor", tags=["Monitoring"])
+# API routes (Protected by API Key)
+app.include_router(bot.router, prefix="/api/bot", tags=["Bot Control"], dependencies=[Depends(get_api_key)])
+app.include_router(config.router, prefix="/api/config", tags=["Configuration"], dependencies=[Depends(get_api_key)])
+app.include_router(monitor.router, prefix="/api/monitor", tags=["Monitoring"], dependencies=[Depends(get_api_key)])
 
 # In production, serve the built frontend
 FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
