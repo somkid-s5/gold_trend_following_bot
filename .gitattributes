@@ -1,0 +1,25 @@
+# Handle line endings automatically
+* text=auto
+
+# Enforce LF for shell scripts and other files
+*.sh text eol=lf
+*.py text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+.editorconfig text eol=lf
+.gitignore text eol=lf
+.dockerignore text eol=lf
+Dockerfile text eol=lf
+
+# Enforce CRLF for PowerShell scripts (Windows preference)
+*.ps1 text eol=crlf
+
+# Binary files
+*.png binary
+*.svg binary
+*.ico binary

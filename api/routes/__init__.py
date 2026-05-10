@@ -1,1 +1,1 @@
-# Init file
+"""API routes package for TITAN Berserker."""
