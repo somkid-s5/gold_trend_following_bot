@@ -115,7 +115,7 @@ def main() -> None:
     if parsed.mode == "live":
         run_live(config)
     else:
-        print("Use scripts/run_mt5_backtests.py for testing.")
+        print("Use scripts/run_backtest.py for testing.")
 
 if __name__ == "__main__":
     main()

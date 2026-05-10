@@ -55,23 +55,16 @@ class BotManager:
             return {"status": "error", "message": str(e)}
 
     def run_backtest(self, symbol: str, days: int, balance: float | None = None, timeframe: str | None = None, risk: float | None = None, backtest_type: str = "standard", dca_amount: float | None = None) -> dict[str, Any]:
-        if backtest_type == "dca":
-            script_path = ROOT_DIR / "scripts" / "run_dca_backtest.py"
-            cmd = ["python", str(script_path), "--days", str(days)]
-            if balance: cmd.extend(["--balance", str(balance)])
-            if dca_amount: cmd.extend(["--dca", str(dca_amount)])
-            if timeframe: cmd.extend(["--timeframe", timeframe])
-            if risk: cmd.extend(["--risk", str(risk)])
-        else:
-            script_path = ROOT_DIR / "scripts" / "run_mt5_backtests.py"
-            cmd = ["python", str(script_path), "--symbol", symbol, "--days", str(days)]
-            if balance: cmd.extend(["--balance", str(balance)])
-            if timeframe: cmd.extend(["--timeframe", timeframe])
-            if risk: cmd.extend(["--risk", str(risk)])
-        
+        script_path = ROOT_DIR / "scripts" / "run_backtest.py"
         if not script_path.exists():
-            return {"status": "error", "message": f"Backtest script not found: {script_path.name}"}
+            return {"status": "error", "message": "Backtest script not found"}
 
+        cmd = ["python", str(script_path), "--type", backtest_type, "--days", str(days)]
+        if symbol: cmd.extend(["--symbol", symbol])
+        if balance: cmd.extend(["--balance", str(balance)])
+        if dca_amount: cmd.extend(["--dca", str(dca_amount)])
+        if risk: cmd.extend(["--risk", str(risk)])
+        
         try:
             subprocess.run(cmd, cwd=str(ROOT_DIR), check=True, capture_output=True, text=True)
             
@@ -89,21 +82,6 @@ class BotManager:
             with open(latest_report, "r", encoding="utf-8") as f:
                 result = json.load(f)
                 
-            # Normalize results for frontend
-            if backtest_type == "dca":
-                return {
-                    "status": "success", 
-                    "data": {
-                        "symbol": "Portfolio (DCA)",
-                        "net_profit": result["total_profit"],
-                        "roi_pct": round((result["total_profit"] / (result["initial_capital"] + result["total_dca_added"])) * 100, 2),
-                        "max_drawdown": result["max_drawdown"],
-                        "total_trades": result["total_trades"],
-                        "win_rate": 0, # DCA script doesn't calc win rate currently
-                        "dca_added": result["total_dca_added"],
-                        "final_equity": result["final_equity"]
-                    }
-                }
             return {"status": "success", "data": result}
         except subprocess.CalledProcessError as e:
             return {"status": "error", "message": f"Backtest failed: {e.stderr}"}
