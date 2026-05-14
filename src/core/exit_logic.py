@@ -28,7 +28,7 @@ class ExitManager:
             return ExitInstruction(current_sl)
 
         be_trigger_rr = float(config.get("breakeven_rr_trigger", 1.0))
-        partial_tp_rr = 3.0 # Hardcoded for v20 extraction
+        partial_tp_rr = 2.0 # BERSERKER: Secure 50% profit at RR 2.0
         
         be_trigger = entry + (risk_dist * be_trigger_rr) if action.upper() == "BUY" else entry - (risk_dist * be_trigger_rr)
         partial_trigger = entry + (risk_dist * partial_tp_rr) if action.upper() == "BUY" else entry - (risk_dist * partial_tp_rr)
