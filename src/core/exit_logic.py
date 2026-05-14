@@ -1,3 +1,7 @@
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import Any
+
 @dataclass(slots=True)
 class ExitInstruction:
     new_sl: float
@@ -34,7 +38,6 @@ class ExitManager:
         # 1. Check Partial TP (High Priority)
         if (action.upper() == "BUY" and current_price >= partial_trigger) or \
            (action.upper() == "SELL" and current_price <= partial_trigger):
-            # Only trigger once per position (would need flag in live, simulation uses simple check)
             instruction.partial_close_pct = 0.5
             instruction.reason = f"Partial TP at RR {partial_tp_rr}"
 
@@ -47,7 +50,7 @@ class ExitManager:
             
         return instruction
 
-    # Legacy support (redirected to v20 style)
+    # Legacy support
     def calculate_managed_sl(
         self, 
         action: str, 

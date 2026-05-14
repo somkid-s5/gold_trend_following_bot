@@ -80,9 +80,10 @@ class RiskManager:
         # Use the safer (smaller) lot size
         final_lot = min(scaled_lot, max_allowed_lot)
         
-        # 3. WIN STREAK BOOST
+        # 3. WIN STREAK BOOST (v20 OVERDRIVE)
         if self.consecutive_wins >= 2:
             final_lot = min(final_lot * 1.5, max_allowed_lot)
+            # Add logging context if needed or just return
 
         step = float(s_cfg.get("lot_step", 0.01))
         final_lot = (final_lot // step) * step
@@ -151,6 +152,44 @@ class RiskManager:
         m = 1.5
         if action.upper() == "BUY": return current_price - (atr_value * m)
         return current_price + (atr_value * m)
+
+    def sync_from_history(self, deals_df: pd.DataFrame) -> None:
+        """
+        Synchronize risk state from closed trade history.
+        Ensures Titan v19 lot scaling persists across restarts.
+        """
+        if deals_df.empty:
+            return
+            
+        # 1. Update realized profit
+        self.realized_trading_profit = float(deals_df["pnl"].sum())
+        
+        # 2. Update streaks from the last sequence
+        self.consecutive_losses = 0
+        self.consecutive_wins = 0
+        
+        # Sort by time to get the latest streak
+        sorted_deals = deals_df.sort_values("time")
+        last_trades = sorted_deals["pnl"].tolist()
+        
+        if not last_trades:
+            return
+            
+        # Find current streak
+        last_pnl = last_trades[-1]
+        is_win_streak = last_pnl > 0
+        
+        for pnl in reversed(last_trades):
+            if is_win_streak:
+                if pnl > 0:
+                    self.consecutive_wins += 1
+                else:
+                    break
+            else:
+                if pnl < 0:
+                    self.consecutive_losses += 1
+                else:
+                    break
 
     def get_total_invested_capital(self) -> float:
         # This will be overridden or called by the connector in live mode

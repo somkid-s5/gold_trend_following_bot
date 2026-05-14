@@ -38,6 +38,8 @@ def run_production_simulation():
         
     data = pd.DataFrame(rates)
     data['time'] = pd.to_datetime(data['time'], unit='s', utc=True)
+    if 'tick_volume' in data.columns:
+        data.rename(columns={'tick_volume': 'volume'}, inplace=True)
     
     # Initialize using REAL production config
     risk_manager = RiskManager(config["risk"], config["symbols"])

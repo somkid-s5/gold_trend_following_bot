@@ -61,6 +61,12 @@ class TrendFollowing:
         is_kill_zone = 12 <= current_hour <= 18
         if not is_kill_zone: return []
 
+        # --- v20 VOLUME FILTER: Rรีดไม้ที่ไม่มีคุณภาพออก ---
+        # Only trade if current volume > 20-bar average volume
+        avg_vol = data["volume"].tail(20).mean()
+        if float(last["volume"]) < avg_vol * 1.2: # Must be 20% higher than average
+            return []
+
         # --- INSTITUTIONAL BREAKOUT LOGIC ---
         # Requirement 1: Macro Trend (Price > EMA 200 for BUY)
         # Requirement 2: Clean Break of Tokyo Range (Price > asian_high)
@@ -70,8 +76,8 @@ class TrendFollowing:
         sell_signal = (price < self.asian_low) and (price < last["ema_200"]) and (price < last["ema_fast"])
 
         # SL/TP Setup: Tight Institutional Risk
-        sl_dist = atr_val * 1.5
-        rr = 10.0 # AIM FOR THE TITAN 100K 
+        sl_dist = atr_val * float(self.config.get("atr_sl_multiplier", 2.5))
+        rr = float(self.config.get("take_profit_rr", 8.0))
 
         signals: list[Signal] = []
         if buy_signal:
