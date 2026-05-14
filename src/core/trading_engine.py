@@ -373,7 +373,7 @@ class TradingEngine:
             volume=lot,
             sl=signal.sl,
             tp=signal.tp,
-            comment=f"{signal.strategy}|conf={signal.confidence:.2f}",
+            comment=f"{signal.strategy[:15]} {signal.confidence:.1f}",
         )
         
         # --- TELEGRAM NOTIFICATION ---
