@@ -247,6 +247,36 @@ class MT5Connector:
             raise RuntimeError(f"close_position failed: {code} {message}")
         return result._asdict()
 
+    def close_partial_position(self, ticket: int, volume: float) -> dict[str, Any]:
+        """Closes only a portion of an open position."""
+        position = mt5.positions_get(ticket=ticket)
+        if not position:
+            raise ValueError(f"Position {ticket} not found")
+        current = position[0]
+        if volume >= current.volume:
+            return self.close_position(ticket)
+
+        tick = self.get_symbol_tick(current.symbol)
+        is_buy = current.type == mt5.ORDER_TYPE_BUY
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "position": ticket,
+            "symbol": current.symbol,
+            "volume": float(volume),
+            "type": mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY,
+            "price": tick.bid if is_buy else tick.ask,
+            "deviation": self.config.get("deviation", 20),
+            "magic": self.config.get("magic_number", 0),
+            "comment": "partial_close",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_IOC,
+        }
+        result = mt5.order_send(request)
+        if result is None:
+            code, message = mt5.last_error()
+            raise RuntimeError(f"close_partial_position failed: {code} {message}")
+        return result._asdict()
+
     def get_total_invested_capital(self) -> float:
         """
         Automatically scans MT5 history to find all deposits and withdrawals.

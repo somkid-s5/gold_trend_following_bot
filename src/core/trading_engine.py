@@ -93,18 +93,34 @@ class TradingEngine:
             entry_price = float(position["price_open"])
             current_sl = float(position["sl"])
             current_tp = float(position["tp"])
+            current_volume = float(position["volume"])
+            ticket = int(position["ticket"])
             
-            # Smart Exit Logic from v3
-            risk_dist = abs(entry_price - current_sl) if current_sl > 0 else (atr_value * 2.0)
-            be_trigger = entry_price + (risk_dist * 1.5) if action == "BUY" else entry_price - (risk_dist * 1.5)
+            # Smart Exit Logic from ExitManager (v20)
+            risk_dist = abs(entry_price - current_sl) if current_sl > 0 else (atr_value * 2.5)
             
-            new_sl = current_sl
-            if (action == "BUY" and current_price >= be_trigger) or (action == "SELL" and current_price <= be_trigger):
-                new_sl = max(current_sl, entry_price) if action == "BUY" else min(current_sl, entry_price)
+            instruction = self.exit_manager.calculate_v20_managed_exit(
+                action=action,
+                entry=entry_price,
+                current_sl=current_sl,
+                current_price=current_price,
+                risk_dist=risk_dist,
+                point=point,
+                config=self.config["risk"]
+            )
 
-            if abs(new_sl - current_sl) >= point:
-                self.connector.modify_position(int(position["ticket"]), sl=new_sl, tp=current_tp)
-                results.append(EngineResult(strategy_name, "managed", f"Updated SL for {symbol} ticket {position['ticket']}"))
+            # 1. Handle Partial Close
+            comment = position.get("comment", "")
+            if instruction.partial_close_pct > 0 and "partial" not in comment:
+                close_vol = round(current_volume * instruction.partial_close_pct, 2)
+                if close_vol >= 0.01:
+                    self.connector.close_partial_position(ticket, close_vol)
+                    results.append(EngineResult(strategy_name, "partial_close", f"Closed {close_vol} for {symbol} ticket {ticket} ({instruction.reason})"))
+
+            # 2. Handle SL Update
+            if abs(instruction.new_sl - current_sl) >= point:
+                self.connector.modify_position(ticket, sl=instruction.new_sl, tp=current_tp)
+                results.append(EngineResult(strategy_name, "managed", f"Updated SL for {symbol} ticket {ticket}: {instruction.reason}"))
         return results
 
     # FIXED: 3
@@ -209,6 +225,14 @@ class TradingEngine:
             symbol_list = list(self.config.get("symbols", {}).keys())
             for symbol in symbol_list:
                 for name in self.strategies:
+                    # Sync risk stats from history before running
+                    trades_df = self.connector.get_strategy_closed_trades(
+                        symbol=symbol,
+                        strategy_name=name,
+                        lookback_days=30
+                    )
+                    self.risk_manager.sync_from_history(trades_df)
+                    
                     # FIXED: 3
                     results.extend(self.run(symbol, name))
             
