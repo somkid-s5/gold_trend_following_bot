@@ -22,15 +22,15 @@ trading:
     trend_following: 3000
 
 risk:
-  risk_per_trade_pct: 10.0      
-  max_daily_loss_pct: 30.0     
-  max_total_drawdown_pct: 70.0 
+  risk_per_trade_pct: 15.0      
+  max_daily_loss_pct: 50.0     
+  max_total_drawdown_pct: 90.0 
   max_spread_points: 500       
   close_all_on_daily_limit: true
   allow_live_trading: true
   allow_strategy_addons:
-    trend_following: 5
-  scaling_delta: 500.0         # ทุกกำไร $500 เพิ่ม Lot ทวีคูณ
+    trend_following: 10
+  scaling_delta: 0.0           # SINGULARITY: No delta, pure equity scaling
   breakeven_rr_trigger: 1.0    
   trailing_stop_atr_multiple: 1.5
 
@@ -56,11 +56,11 @@ symbols:
     point: 0.01
     contract_size: 100
     min_lot: 0.01
-    max_lot: 50.0
+    max_lot: 100.0
     lot_step: 0.01
 
 news_filter:
-  enabled: true
+  enabled: false
   minutes_before: 60
   minutes_after: 60
   high_impact_events: ["High", "NFP", "FOMC", "CPI"]

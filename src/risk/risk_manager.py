@@ -43,52 +43,37 @@ class RiskManager:
         self,
         symbol: str = "XAUUSD",
         equity: float = 0.0,
-        risk_pct: float = 0.0, # This is still here for fallback, but we prioritize config logic
+        risk_pct: float = 0.0,
         sl_distance_price: float = 0.0,
         tick_size: float | None = None,
         tick_value: float | None = None,
         confidence_multiplier: float = 1.0,
     ) -> float:
         """
-        🚀 UNIFIED PRODUCTION SCALING (v19 TITAN OVERDRIVE)
-        This same logic is used in BOTH Backtest and Live modes.
+        🌌 TITAN SINGULARITY SCALING (Full Real-time Compounding)
+        No deltas, no buffers. Every cent of equity is used for risk calculation.
         """
         if sl_distance_price <= 0: return 0.01
         s_cfg = self.symbols_config.get(symbol, {})
         if not isinstance(s_cfg, dict) or not s_cfg:
-            first_val = next(iter(self.symbols_config.values()), None)
-            if isinstance(first_val, dict):
-                s_cfg = first_val
-            else:
-                s_cfg = self.symbols_config
+            s_cfg = next(iter(self.symbols_config.values()), {})
 
-        # 1. FIXED RATIO SCALING LOGIC
-        base_lot = 0.05
-        # Scaling speed from config or default $1000
-        profit_delta = float(self.config.get("scaling_delta", 1000.0))
-        
-        num_increments = int(self.realized_trading_profit / profit_delta)
-        scaled_lot = base_lot + (num_increments * 0.05)
-
-        # 2. HARD RISK CAP (Safety First - Max 4% per trade)
-        max_risk_pct = 4.0 
-        risk_amount = float(equity) * (max_risk_pct / 100.0)
+        # 1. SINGULARITY CALCULATION: Pure Equity Risk
+        risk_amount = float(equity) * (float(risk_pct) / 100.0)
         ts = float(tick_size or s_cfg.get("point", 0.01))
         tv = float(tick_value or (s_cfg.get("contract_size", 100) * ts))
-        max_allowed_lot = risk_amount / ((sl_distance_price / ts) * tv)
-
-        # Use the safer (smaller) lot size
-        final_lot = min(scaled_lot, max_allowed_lot)
         
-        # 3. WIN STREAK BOOST (v20 OVERDRIVE)
+        # Exact lot for the risk amount
+        raw_lot = risk_amount / ((sl_distance_price / ts) * tv)
+
+        # 2. WIN STREAK OVERDRIVE (v20+)
         if self.consecutive_wins >= 2:
-            final_lot = min(final_lot * 1.5, max_allowed_lot)
-            # Add logging context if needed or just return
+            raw_lot *= 1.5
 
         step = float(s_cfg.get("lot_step", 0.01))
-        final_lot = (final_lot // step) * step
+        final_lot = (raw_lot // step) * step
         
-        return round(max(0.01, min(50.0, final_lot)), 2)
+        return round(max(0.01, min(100.0, final_lot)), 2)
 
     def check_correlation(self, symbol: str, open_positions: list[dict[str, Any]]) -> RiskDecision:
         groups = {"USD": ["XAUUSDm", "GBPUSDm", "EURUSDm"]}

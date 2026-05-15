@@ -167,8 +167,25 @@ class TradingEngine:
 
             # 3. Execution Check
             existing = self._strategy_positions(symbol, strategy_name)
-            if len(existing) >= int(self.config["risk"]["allow_strategy_addons"].get(strategy_name, 1)):
-                return results
+            max_addons = int(self.config["risk"]["allow_strategy_addons"].get(strategy_name, 10))
+            
+            # --- TITAN SINGULARITY: PYRAMIDING LOGIC ---
+            if existing:
+                if len(existing) >= max_addons:
+                    return results
+                
+                # Check for Pyramiding Opportunity (Every 2.0 ATR move in favor)
+                last_pos = max(existing, key=lambda x: int(x["ticket"]))
+                entry_price = float(last_pos["price_open"])
+                current_price = frame["close"].iloc[-1]
+                atr_val = frame["atr"].iloc[-1]
+                
+                action = "BUY" if int(last_pos["type"]) == 0 else "SELL"
+                dist = (current_price - entry_price) if action == "BUY" else (entry_price - current_price)
+                
+                if dist < (atr_val * 2.0):
+                    return results
+                self.logger.info("🗼 SINGULARITY PYRAMID | Adding position for %s", symbol)
 
             signals = strategy.generate_signals(frame, {"symbol": symbol})
             if signals:
