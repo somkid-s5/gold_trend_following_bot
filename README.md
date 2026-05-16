@@ -1,14 +1,13 @@
-# 🏆 TITAN BERSERKER v3.0
+# 🏆 TITAN SINGULARITY v4.0 (God Mode)
 
-ระบบเทรดอัตโนมัติ (Algorithmic Trading) ระดับสถาบันการเงิน ออกแบบมาเพื่อบริหารพอร์ตโฟลิโอ (Multi-Symbol) ด้วยกลยุทธ์ **Institutional Trend Following** และการบริหารเงินแบบ **v19 Titan Overdrive**
+ระบบเทรดอัตโนมัติ (Algorithmic Trading) ระดับสูงสุดที่ถูกปลดลิมิตเพื่อการทำกำไรแบบทวีคูณ (Exponential Growth) ด้วยกลยุทธ์ **Institutional Trend Pyramiding** และการบริหารเงินแบบ **Full Real-time Compounding (Singularity Scaling)** พร้อมระบบความปลอดภัยอัจฉริยะ (Dynamic Risk)
 
-## 🚀 จุดเด่นของระบบ (Unified Edition)
-- **Multi-Symbol Portfolio**: รันหลายคู่เงินพร้อมกัน (เช่น XAUUSD, EURUSD, BTCUSD) จัดการความเสี่ยงแบบรวมศูนย์
-- **One-Click Execution**: รันทุกอย่าง (Dashboard + API + Bot Manager) ผ่าน Docker หรือ PowerShell สคริปต์เดียวจบ
-- **Institutional Strategy**: กลยุทธ์ตามเทรนระดับสถาบัน พร้อมระบบ Trailing Stop และ Breakeven อัตโนมัติ
-- **v19 Overdrive Engine**: ระบบคำนวณ Lot ทบต้นอัตโนมัติ (Scaling Delta) พร้อม Hard Risk Cap ต่อไม้
-- **Secure Control**: ปกป้องแผงควบคุมด้วย API Key Authentication และรันในสภาพแวดล้อมที่แยกส่วน
-- **Unified Backtest**: ระบบทดสอบย้อนหลังที่แม่นยำ รองรับทั้งการรันแบบปกติและการรันแบบ DCA (Monthly Investment)
+## 🚀 จุดเด่นของระบบ (God Mode Edition)
+- **Singularity Scaling**: ถอดระบบ Scaling Delta แบบขั้นบันไดออก คำนวณ Lot ใหม่ทุกวินาทีจาก Equity 100% ทำให้พอร์ตเติบโตแบบก้าวกระโดด
+- **Exponential Pyramiding**: ระบบถมไม้ตามน้ำ สูงสุด 10 ไม้ ทุกๆ การขยับของราคา 2.0 ATR ในเทรนด์หลัก (EMA 200 Anchor)
+- **Smart Aggression**: ความเสี่ยงเริ่มต้น 15% ต่อไม้เพื่อเร่งกำไร แต่จะลดความเสี่ยงอัตโนมัติเหลือ 5% หากแพ้ เพื่อป้องกัน Drawdown แบบต่อเนื่อง
+- **Ultra-Fast Breakeven**: เลื่อน SL บังทุนไวเป็นพิเศษที่ RR 0.5 และปิดกำไร 50% ทันทีที่ RR 2.0 เพื่อล็อกกำไรเข้ากระเป๋าให้เร็วที่สุด
+- **Zero Friction**: ไม่หลบข่าว ปะทะทุกความผันผวนของ NFP/FOMC เพื่อจับรอบ Breakout รุนแรง
 
 ## 🛠️ โครงสร้างโปรเจกต์
 ```text
@@ -18,14 +17,22 @@
 ├── frontend/       # Dashboard สวยงาม (React + Vite + TypeScript)
 ├── scripts/        # สคริปต์ช่วยรันระบบ และระบบ Backtest รวมศูนย์
 ├── src/            # หัวใจบอท (Trading Logic, Risk Manager, MT5 Connector)
-├── main.py         # สมองกลหลักสำหรับเชื่อมต่อ Live MT5 (Portfolio Engine)
-└── docker-compose.yml # ไฟล์สำหรับสั่งรันทั้งระบบแบบเบ็ดเสร็จ
+├── main.py         # สมองกลหลักและตัวเปิดระบบ Dashboard (Entry Point)
+└── .env            # ไฟล์เก็บค่า Config ลับ (Credentials)
 ```
 
 ## 🏁 วิธีเริ่มใช้งาน (Quick Start)
 
-### 1. ตั้งค่าบัญชี (Setup)
-สร้างไฟล์ `.env` (ดูตัวอย่างจาก `.env.example`) เพื่อใส่ข้อมูลบัญชีเทรด:
+### 1. ติดตั้งสภาพแวดล้อม (Installation)
+แนะนำให้ใช้งานผ่าน Python 3.12+ บน Windows:
+```powershell
+# ติดตั้ง Library ที่จำเป็น
+pip install -r requirements.txt
+```
+_หมายเหตุ: สำหรับการพัฒนาหน้าจอ Dashboard ครั้งแรก ต้อง build frontend ด้วยคำสั่ง `cd frontend; npm install; npm run build` เพื่อให้ main.py แสดงผล UI ได้_
+
+### 2. ตั้งค่าบัญชี (Setup)
+สร้างไฟล์ `.env` จากตัวอย่าง `.env.example`:
 ```env
 MT5_LOGIN=your_login
 MT5_PASSWORD=your_password
@@ -33,33 +40,32 @@ MT5_SERVER=Exness-MT5Trial7
 API_KEY=your_secret_api_key  # สำหรับล็อคหน้า Dashboard
 ```
 
-### 2. รันระบบ (Execution)
-**ผ่าน Docker (แนะนำ):**
-```bash
-docker-compose up --build -d
-```
-จากนั้นเปิดไปที่: `http://localhost:8000`
+### 3. รันระบบ (Execution)
+รันเพียงคำสั่งเดียวเพื่อเริ่มต้นการเทรดและเปิดหน้า Dashboard:
 
-**ผ่าน PowerShell (Local):**
 ```powershell
-.\scripts\start_webapp.ps1
+python main.py
 ```
 
-### 3. การทดสอบย้อนหลัง (Backtesting)
-สามารถรันผ่าน Dashboard หรือใช้ Command Line:
+- **Dashboard**: `http://localhost:8000` (แสดงผล UI อัตโนมัติหากมีการ build แล้ว)
+- **API Docs**: `http://localhost:8000/docs`
+
+### 4. การทดสอบย้อนหลัง (Backtesting)
+สามารถรันผ่าน Dashboard (หน้า Backtest Lab) หรือใช้ Command Line:
 ```bash
-# ทดสอบแบบมาตรฐาน
+# ทดสอบแบบมาตรฐาน (Single Symbol)
 python scripts/run_backtest.py --symbol XAUUSDm --days 365
 
-# ทดสอบแบบพอร์ตโฟลิโอ DCA
+# ทดสอบแบบพอร์ตโฟลิโอ DCA (Monthly Investment)
 python scripts/run_backtest.py --type dca --days 720 --balance 10000 --dca 200
 ```
 
-## 🛡️ มาตรฐานความปลอดภัยและการตรวจสอบ
-- **Security**: ทุกการสั่งงานผ่าน API ต้องแนบ Header `X-Titan-API-Key`
-- **Verification**: ระบบผ่านการแก้ไข Linting และ Type Safety 100% เพื่อความเสถียรสูงสุด
-- **Logs**: มีระบบหมุนเวียนไฟล์อัตโนมัติ (Rotate) ในโฟลเดอร์ `logs/`
+## 🛡️ การปรับปรุงล่าสุด (Singularity V4.0)
+- **God Mode Activated**: การออกแบบเชิงคณิตศาสตร์ที่รีดศักยภาพกำไรของทองคำในระดับทวีคูณ (Pyramiding + 100% Compounding)
+- **Ultra-Integrated**: `main.py` ทำหน้าที่เป็น Orchestrator จัดการทั้งการเทรดและ API Dashboard ในตัวเดียว
+- **High Contrast UI**: ปรับโทนสีข้อความและเส้นขอบให้สว่างขึ้น มองเห็นชัดเจนบนพื้นหลัง AMOLED Dark
+- **Docker Removed**: คลีนไฟล์ Docker ออกทั้งหมดเพื่อความเบาและรวดเร็วในการรันแบบ Local
 
 ---
-**Disclaimer**: การลงทุนมีความเสี่ยงสูง ระบบนี้ถูกออกแบบมาเพื่อการรันระยะยาว 10 ปี ควรทดสอบบนบัญชี Demo จนมั่นใจก่อนใช้งานจริงเสมอ
-_🛰 TITAN AI Engine v3.0 | Portfolio Edition_
+**Disclaimer**: การลงทุนมีความเสี่ยงสูง ระบบนี้ถูกออกแบบมาเพื่อการรันความเสี่ยงสูง (High Risk, Extreme Reward) โปรดใช้งานด้วยความระมัดระวังและทดสอบจนเข้าใจพฤติกรรมพอร์ตก่อนเสมอ
+_🛰 TITAN AI Engine v4.0 | Singularity (God Mode) Edition_

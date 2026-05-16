@@ -87,6 +87,7 @@ def run_production_simulation():
             lot = risk_manager.calculate_lot(
                 symbol=symbol,
                 equity=balance,
+                risk_pct=config["risk"]["risk_per_trade_pct"],
                 sl_distance_price=risk_dist,
                 tick_size=config["symbols"][symbol]["point"],
                 tick_value=config["symbols"][symbol]["contract_size"] * config["symbols"][symbol]["point"]

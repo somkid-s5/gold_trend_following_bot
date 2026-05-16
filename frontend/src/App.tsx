@@ -8,9 +8,7 @@ import SettingsModal from './components/SettingsModal';
 
 // --- TITAN SECURITY LAYER: Global API Key Injection ---
 axios.interceptors.request.use((config) => {
-  if (config.url?.startsWith(API.BASE)) {
-    config.headers[API.HEADER] = API.KEY;
-  }
+  config.headers[API.HEADER] = API.KEY;
   return config;
 });
 
@@ -201,7 +199,7 @@ function App() {
 
         {/* Footer */}
         <footer className="mt-auto px-6 lg:px-10 py-6 border-t border-[var(--color-border-subtle)] flex flex-col sm:flex-row justify-between items-center gap-4">
-          <span className="text-[11px] text-[var(--color-text-dim)] font-medium">TITAN Berserker Trading Engine © {new Date().getFullYear()}</span>
+          <span className="text-[11px] text-[var(--color-text-dim)] font-medium">TITAN Singularity Trading Engine © {new Date().getFullYear()}</span>
           <div className="flex items-center gap-6 text-[10px] text-[var(--color-text-dim)] font-black uppercase tracking-widest">
             <span className="hover:text-white cursor-help transition-colors">Documentation</span>
             <span className="hover:text-white cursor-help transition-colors">System Health</span>

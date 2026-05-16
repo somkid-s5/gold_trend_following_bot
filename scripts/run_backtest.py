@@ -8,8 +8,20 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-import MetaTrader5 as mt5
+try:
+    import MetaTrader5 as mt5
+    HAS_MT5 = True
+except ImportError:
+    HAS_MT5 = False
+    mt5 = None
+
 import pandas as pd
+
+try:
+    import yfinance as yf
+    HAS_YF = True
+except ImportError:
+    HAS_YF = False
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -20,29 +32,64 @@ from src.risk.risk_manager import RiskManager
 from src.utils.backtester import Backtester
 from src.utils.logger import setup_logger
 
+# Map MT5 symbols to Yahoo Finance symbols
+SYMBOL_MAP = {
+    "XAUUSDm": "XAUUSD=X",
+    "XAUUSD": "XAUUSD=X",
+    "GOLD": "XAUUSD=X"
+}
 
-def fetch_history(symbol: str, days: int) -> pd.DataFrame:
-    end = datetime.now(timezone.utc)
-    start = end - timedelta(days=days)
-    rates = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_H1, start, end)
-    if rates is None or len(rates) == 0:
-        return pd.DataFrame()
-    df = pd.DataFrame(rates)
-    df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
-    if "tick_volume" in df.columns:
-        df.rename(columns={"tick_volume": "volume"}, inplace=True)
-    return df
+def fetch_history(symbol: str, days: int, logger: Any = None) -> pd.DataFrame:
+    if HAS_MT5 and mt5.terminal_info() is not None:
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=days)
+        rates = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_H1, start, end)
+        if rates is not None and len(rates) > 0:
+            df = pd.DataFrame(rates)
+            df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
+            if "tick_volume" in df.columns:
+                df.rename(columns={"tick_volume": "volume"}, inplace=True)
+            return df
+    
+    # Fallback to Yahoo Finance
+    if HAS_YF:
+        yf_sym = SYMBOL_MAP.get(symbol, symbol)
+        if logger: logger.info("MT5 unavailable. Falling back to Yahoo Finance for %s (%s)", symbol, yf_sym)
+        
+        # yfinance fetch
+        ticker = yf.Ticker(yf_sym)
+        # interval '1h' for H1
+        period = f"{days}d" if days <= 730 else "max"
+        df = ticker.history(period=period, interval="1h")
+        
+        if df.empty:
+            return pd.DataFrame()
+            
+        df = df.reset_index()
+        df.rename(columns={
+            "Datetime": "time",
+            "Open": "open",
+            "High": "high",
+            "Low": "low",
+            "Close": "close",
+            "Volume": "volume"
+        }, inplace=True)
+        df["time"] = pd.to_datetime(df["time"], utc=True)
+        return df
+        
+    return pd.DataFrame()
 
 
 def run_standard_backtest(args: argparse.Namespace, config: dict[str, Any], logger: Any) -> dict[str, Any]:
     symbol = args.symbol
     days = args.days
     
-    if not mt5.symbol_select(symbol, True):
-        raise RuntimeError(f"Unable to select symbol {symbol}: {mt5.last_error()}")
-
+    if HAS_MT5 and mt5.terminal_info() is not None:
+        if not mt5.symbol_select(symbol, True):
+            logger.warning(f"Unable to select symbol {symbol} in MT5: {mt5.last_error()}")
+    
     logger.info("Running Standard Backtest for %s (%s days)", symbol, days)
-    frame = fetch_history(symbol, days)
+    frame = fetch_history(symbol, days, logger)
     if frame.empty:
         raise RuntimeError(f"No history data for {symbol}")
 
@@ -87,7 +134,7 @@ def run_dca_backtest(args: argparse.Namespace, config: dict[str, Any], logger: A
     
     data_map = {}
     for sym in symbols:
-        df = fetch_history(sym, days)
+        df = fetch_history(sym, days, logger)
         if not df.empty:
             data_map[sym] = df
 
@@ -197,15 +244,20 @@ def main() -> None:
     if args.risk:
         config["risk"]["risk_per_trade_pct"] = args.risk
 
-    # MT5 connection
-    login = int(os.getenv("MT5_LOGIN", 0))
-    password = os.getenv("MT5_PASSWORD")
-    server = os.getenv("MT5_SERVER")
-    path = os.getenv("MT5_PATH")
+    if HAS_MT5:
+        # MT5 connection
+        login_env = os.getenv("MT5_LOGIN")
+        login = int(login_env) if login_env and login_env.isdigit() else 0
+        password = os.getenv("MT5_PASSWORD")
+        server = os.getenv("MT5_SERVER")
+        path = os.getenv("MT5_PATH")
 
-    if not mt5.initialize(path=path, login=login, password=password, server=server, timeout=60_000):
-        logger.error("MT5 initialize failed: %s", mt5.last_error())
-        sys.exit(1)
+        if login > 0 and mt5.initialize(path=path, login=login, password=password, server=server, timeout=60_000):
+            logger.info("MT5 initialized successfully")
+        else:
+            logger.warning("MT5 initialize failed or no credentials: %s. Using fallback data if available.", mt5.last_error() if HAS_MT5 else "MT5 not installed")
+    else:
+        logger.info("Running in non-MT5 mode (Docker/Linux). Will use Yahoo Finance fallback.")
 
     try:
         if args.type == "dca":
@@ -218,7 +270,8 @@ def main() -> None:
         logger.exception("Backtest failed: %s", e)
         sys.exit(1)
     finally:
-        mt5.shutdown()
+        if HAS_MT5:
+            mt5.shutdown()
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ interface BacktestResult {
   max_drawdown: number;
   total_trades: number;
   win_rate: number;
-  dca_added?: number;
+  total_dca_added?: number;
   final_equity?: number;
 }
 
@@ -313,7 +313,7 @@ export default function BacktestView() {
                       </div>
                       <div>
                         <div className="text-[10px] font-bold text-[var(--color-text-dim)] uppercase tracking-wider">Capital Added (DCA)</div>
-                        <div className="text-2xl font-bold text-number text-white">${result.dca_added?.toLocaleString()}</div>
+                        <div className="text-2xl font-bold text-number text-white">${result.total_dca_added?.toLocaleString()}</div>
                       </div>
                     </div>
                   </div>
@@ -355,7 +355,7 @@ export default function BacktestView() {
                     </p>
                   </div>
                   <div className="px-6 py-2 bg-slate-950 text-amber-400 rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-xl">
-                    Berserker v3.0
+                    Singularity v4.0
                   </div>
                 </div>
               </div>
