@@ -94,7 +94,7 @@ def run_standard_backtest(args: argparse.Namespace, config: dict[str, Any], logg
         raise RuntimeError(f"No history data for {symbol}")
 
     strategy = build_strategy(config)
-    risk_manager = RiskManager(config["risk"], config["symbols"][symbol])
+    risk_manager = RiskManager(config["risk"], config["symbols"])
     backtester = Backtester(strategy, risk_manager, config, logger)
     
     initial_balance = args.balance or float(config["backtest"]["initial_balance"])
@@ -132,22 +132,33 @@ def run_dca_backtest(args: argparse.Namespace, config: dict[str, Any], logger: A
     
     logger.info("Running Unified DCA Backtest (%s days, $%s initial, $%s monthly DCA)", days, initial_balance, dca_amount)
     
+    # Fetch & prepare data (SAME as Standard mode)
     data_map = {}
+    prepared_map = {}
     for sym in symbols:
         df = fetch_history(sym, days, logger)
         if not df.empty:
             data_map[sym] = df
-
-    if not data_map:
+            strategy = build_strategy(config)
+            prepared_map[sym] = strategy.prepare_data(df)  # Pre-calculate ALL indicators
+    
+    if not prepared_map:
         raise RuntimeError("No history data found for any symbols")
-
+    
     balance = initial_balance
     total_dca = 0.0
     risk_manager = RiskManager(config["risk"], config["symbols"])
     strategy = build_strategy(config)
+    risk_pct = float(config["risk"]["risk_per_trade_pct"])
+    fee_per_lot = float(config["backtest"]["fee_per_lot"])
+    avg_spread = float(config["backtest"].get("avg_spread_points", 0))
+    max_slippage = float(config["backtest"].get("max_slippage_points", 0))
+    
+    # Create Backtester to use unified exit logic
+    backtester = Backtester(strategy, risk_manager, config, logger)
     
     # Combine all unique timestamps
-    all_times = sorted(list(set(pd.concat([df["time"] for df in data_map.values()]))))
+    all_times = sorted(list(set(pd.concat([df["time"] for df in prepared_map.values()]))))
     
     last_month = -1
     trades_count = 0
@@ -155,54 +166,87 @@ def run_dca_backtest(args: argparse.Namespace, config: dict[str, Any], logger: A
     max_equity = balance
     max_dd = 0
 
-    # Start after some warmup (approx 50 days of H1 bars)
-    start_idx = min(1200, len(all_times) - 1)
+    # SAME warmup as Standard mode (1201 bars)
+    warmup = 1201
+    start_idx = min(warmup, len(all_times) - 1)
     
     for i in range(start_idx, len(all_times) - 1):
         t = all_times[i]
         
         # Monthly DCA
         if t.month != last_month:
-            if last_month != -1: # Don't add on first bar
+            if last_month != -1:
                 balance += dca_amount
                 total_dca += dca_amount
             last_month = t.month
 
         risk_manager.update_equity_state(balance, balance)
         
-        for sym, df in data_map.items():
-            # Find matching bar for this timestamp
-            match = df[df["time"] == t]
-            if match.empty: continue
+        for sym, prepared_df in prepared_map.items():
+            # Find matching bar in prepared data
+            match = prepared_df[prepared_df["time"] == t]
+            if match.empty:
+                continue
             
             idx = match.index[0]
-            if idx < 100 or idx + 1 >= len(df): continue
+            if idx < 1 or idx + 1 >= len(prepared_df):
+                continue
             
-            signals = strategy.generate_signals(df.iloc[idx-100:idx+1], {"symbol": sym})
-            if signals:
-                sig = max(signals, key=lambda x: x.confidence)
-                s_cfg = config["symbols"][sym]
-                ts = float(s_cfg["point"])
-                tv = float(s_cfg["contract_size"]) * ts
-                
-                lot = risk_manager.calculate_lot(sym, balance, args.risk or 2.0, abs(sig.entry - sig.sl), ts, tv, sig.confidence)
-                
-                next_bar = df.iloc[idx+1]
+            # SAME signal generation as Standard mode
+            signals = strategy.generate_signals(prepared_df.iloc[idx-1:idx+1], {"symbol": sym})
+            if not signals:
+                continue
+            
+            sig = max(signals, key=lambda x: x.confidence)
+            s_cfg = config["symbols"][sym]
+            ts = float(s_cfg["point"])
+            tv = float(s_cfg["contract_size"]) * ts
+            
+            risk_dist = abs(sig.entry - sig.sl)
+            lot = risk_manager.calculate_lot(sym, balance, risk_pct, risk_dist, ts, tv, sig.confidence)
+            
+            # Apply spread & slippage (SAME as Standard mode)
+            import random
+            entry_price = backtester._apply_spread(sig.action, sig.entry, avg_spread, ts)
+            spread_cost = avg_spread * ts * tv * lot
+            if max_slippage > 0:
+                slippage_amount = random.uniform(0, max_slippage) * ts
                 if sig.action == "BUY":
-                    exit_p = sig.tp if next_bar["high"] >= sig.tp else (sig.sl if next_bar["low"] <= sig.sl else next_bar["close"])
-                    pnl = (exit_p - sig.entry) / ts * tv * lot
+                    entry_price += slippage_amount
                 else:
-                    exit_p = sig.tp if next_bar["low"] <= sig.tp else (sig.sl if next_bar["high"] >= sig.sl else next_bar["close"])
-                    pnl = (sig.entry - exit_p) / ts * tv * lot
-                
-                balance += pnl
-                risk_manager.update_trade_outcome(pnl)
-                trades_count += 1
-                if pnl > 0: wins += 1
-                
-                max_equity = max(max_equity, balance)
-                dd = (max_equity - balance) / max_equity * 100
-                max_dd = max(max_dd, dd)
+                    entry_price -= slippage_amount
+            
+            next_bar = prepared_df.iloc[idx + 1]
+            
+            # SAME exit logic as Standard & Live (v20 managed exit)
+            exit_price, pnl = backtester._simulate_single_bar_exit(
+                signal_action=sig.action,
+                entry_price=entry_price,
+                sl_price=sig.sl,
+                tp_price=sig.tp,
+                risk_dist=risk_dist,
+                tick_size=ts,
+                tick_value=tv,
+                lot=lot,
+                fee_per_lot=fee_per_lot,
+                spread_cost=spread_cost,
+                next_row=next_bar,
+            )
+            
+            balance += pnl
+            risk_manager.update_trade_outcome(pnl)
+            trades_count += 1
+            if pnl > 0:
+                wins += 1
+            
+            max_equity = max(max_equity, balance)
+            dd = (max_equity - balance) / max_equity * 100
+            max_dd = max(max_dd, dd)
+
+        if i % 500 == 0:
+            print(f"\r{t.strftime('%Y-%m')}| BAL: {balance:>12.2f}", end="")
+    
+    print(f"\r{all_times[-1].strftime('%Y-%m')}| BAL: {balance:>12.2f}")
 
     payload = {
         "symbol": "Portfolio (DCA)",
@@ -210,7 +254,7 @@ def run_dca_backtest(args: argparse.Namespace, config: dict[str, Any], logger: A
         "total_dca_added": total_dca,
         "final_equity": round(balance, 2),
         "net_profit": round(balance - (initial_balance + total_dca), 2),
-        "roi_pct": round((round(balance - (initial_balance + total_dca), 2) / (initial_balance + total_dca)) * 100, 2),
+        "roi_pct": round((round(balance - (initial_balance + total_dca), 2) / (initial_balance + total_dca)) * 100, 2) if (initial_balance + total_dca) > 0 else 0,
         "max_drawdown": round(max_dd, 2),
         "total_trades": trades_count,
         "win_rate": round((wins / trades_count * 100) if trades_count > 0 else 0, 2),

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
+import pandas as pd
+
 
 @dataclass(slots=True)
 class RiskDecision:
@@ -38,7 +40,6 @@ class RiskManager:
             self.consecutive_losses = 0
             self.consecutive_wins += 1
 
-    # FIXED: 4
     def calculate_lot(
         self,
         symbol: str = "XAUUSD",
@@ -50,25 +51,31 @@ class RiskManager:
         confidence_multiplier: float = 1.0,
     ) -> float:
         """
-        🌌 TITAN SINGULARITY SCALING (Full Real-time Compounding)
-        No deltas, no buffers. Every cent of equity is used for risk calculation.
+        🌌 TITAN SMART SINGULARITY (Dynamic Compounding)
+        High risk (15%) when winning, cautious risk (5%) during drawdowns.
         """
         if sl_distance_price <= 0: return 0.01
         s_cfg = self.symbols_config.get(symbol, {})
         if not isinstance(s_cfg, dict) or not s_cfg:
             s_cfg = next(iter(self.symbols_config.values()), {})
 
-        # 1. SINGULARITY CALCULATION: Pure Equity Risk
-        risk_amount = float(equity) * (float(risk_pct) / 100.0)
+        # 1. DYNAMIC RISK ADJUSTMENT (Protective)
+        active_risk = float(risk_pct)
+        if self.consecutive_losses >= 2:
+            active_risk *= 0.5   # 2+ losses: halve risk (2% → 1%)
+        elif self.consecutive_losses >= 1:
+            active_risk *= 0.75  # 1 loss: reduce 25% (2% → 1.5%)
+        
+        risk_amount = float(equity) * (active_risk / 100.0)
         ts = float(tick_size or s_cfg.get("point", 0.01))
         tv = float(tick_value or (s_cfg.get("contract_size", 100) * ts))
         
         # Exact lot for the risk amount
         raw_lot = risk_amount / ((sl_distance_price / ts) * tv)
 
-        # 2. WIN STREAK OVERDRIVE (v20+)
-        if self.consecutive_wins >= 2:
-            raw_lot *= 1.5
+        # 2. WIN STREAK BOOST (capped at 1.3x for safety)
+        if self.consecutive_wins >= 3:
+            raw_lot *= min(1.3, 1.0 + (self.consecutive_wins * 0.1))
 
         step = float(s_cfg.get("lot_step", 0.01))
         final_lot = (raw_lot // step) * step
@@ -80,6 +87,25 @@ class RiskManager:
         open_syms = [pos.get("symbol", "") for pos in open_positions]
         count = sum(1 for s in open_syms if s in groups["USD"])
         if count >= 2: return RiskDecision(False, "Correlation Limit")
+        return RiskDecision(True)
+
+    def check_total_exposure(self, equity: float, open_positions: list[dict[str, Any]], new_risk_pct: float = 2.0) -> RiskDecision:
+        """Guard against total portfolio exposure exceeding safe limits."""
+        max_total_risk = float(self.config.get("max_total_risk_pct", 10.0))
+        
+        # Estimate current risk from open positions
+        current_risk = 0.0
+        for pos in open_positions:
+            entry = float(pos.get("price_open", 0))
+            sl = float(pos.get("sl", 0))
+            volume = float(pos.get("volume", 0))
+            if entry > 0 and sl > 0 and equity > 0:
+                risk_amount = abs(entry - sl) * volume * 100  # Approximate for gold
+                current_risk += (risk_amount / equity) * 100
+        
+        total_risk = current_risk + new_risk_pct
+        if total_risk > max_total_risk:
+            return RiskDecision(False, f"Total exposure {total_risk:.1f}% > limit {max_total_risk}%")
         return RiskDecision(True)
 
     def total_drawdown_pct(self, equity: float) -> float:
@@ -104,7 +130,6 @@ class RiskManager:
         if spread_points > max_s: return RiskDecision(False, f"Spread: {spread_points:.1f}")
         return RiskDecision(True)
 
-    # FIXED: 2
     def news_filter(self, now_utc: datetime, news_cfg: dict[str, Any]) -> RiskDecision:
         if not news_cfg.get("enabled", False):
             return RiskDecision(True)

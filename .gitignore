@@ -1,12 +1,15 @@
-# Environment
+# Environment & Credentials
 .env
-.env*
+.env.*
+!.env.example
 
 # Python
 __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+.venv/
+venv/
 
 # Node / Frontend
 frontend/node_modules/
@@ -24,3 +27,8 @@ data/*_365d.csv
 # IDE
 .vscode/
 .idea/
+
+# AI tool artifacts (not part of the project)
+.superpowers/
+docs/maestro/
+docs/superpowers/

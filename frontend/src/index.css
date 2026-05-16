@@ -19,14 +19,14 @@
   --color-bg-input: rgba(15, 20, 40, 0.9);
 
   --color-border-subtle: rgba(255, 255, 255, 0.06);
-  --color-border-light: rgba(255, 255, 255, 0.08);
-  --color-border-medium: rgba(255, 255, 255, 0.12);
-  --color-border-glow: rgba(245, 158, 11, 0.3);
+  --color-border-light: rgba(255, 255, 255, 0.15);
+  --color-border-medium: rgba(255, 255, 255, 0.25);
+  --color-border-glow: rgba(245, 158, 11, 0.4);
 
-  --color-text-primary: #f1f5f9;
-  --color-text-secondary: #94a3b8;
-  --color-text-muted: #64748b;
-  --color-text-dim: #475569;
+  --color-text-primary: #f8fafc;
+  --color-text-secondary: #e2e8f0;
+  --color-text-muted: #cbd5e1;
+  --color-text-dim: #94a3b8;
 
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", monospace;

@@ -1,8 +1,7 @@
 # =============================================================================
-# TITAN GOLD SINGULARITY - UNIFIED PRODUCTION CONFIG
+# TITAN BERSERKER v3.0 - PRODUCTION CONFIG
 # =============================================================================
 
-# FIXED: 9
 mt5:
   login: 0   # Override via MT5_LOGIN in .env
   password: "CHANGE_ME_IN_ENV"
@@ -22,17 +21,18 @@ trading:
     trend_following: 3000
 
 risk:
-  risk_per_trade_pct: 15.0      
-  max_daily_loss_pct: 50.0     
-  max_total_drawdown_pct: 90.0 
-  max_spread_points: 500       
+  risk_per_trade_pct: 2.0         # Professional: 1-2% per trade
+  max_daily_loss_pct: 5.0         # Max 5% loss per day
+  max_total_drawdown_pct: 20.0    # Halt if account drops 20% from peak
+  max_spread_points: 50           # Reject trades when spread is abnormally wide
   close_all_on_daily_limit: true
   allow_live_trading: true
   allow_strategy_addons:
-    trend_following: 10
-  scaling_delta: 0.0           # SINGULARITY: No delta, pure equity scaling
+    trend_following: 3            # Max 3 pyramided positions
+  scaling_delta: 0.0              # No delta, pure equity scaling
   breakeven_rr_trigger: 1.0    
   trailing_stop_atr_multiple: 1.5
+  max_total_risk_pct: 10.0        # Max combined risk of all open positions
 
 strategies:
   trend_following:
@@ -44,11 +44,16 @@ strategies:
     rsi_sell_level: 70
     atr_period: 14
     atr_sl_multiplier: 2.5
-    take_profit_rr: 15.0
+    take_profit_rr: 3.0
+    min_adx: 20                   # Minimum ADX for trend confirmation
 
 backtest:
   initial_balance: 10000.0
-  fee_per_lot: 0.0 
+  fee_per_lot: 0.0
+  avg_spread_points: 3.0          # Average spread for XAUUSD (points)
+  max_slippage_points: 1.5        # Max random slippage per trade (points)
+  multi_bar_hold: true            # Hold positions across multiple bars until SL/TP hit
+  max_hold_bars: 48               # Max bars to hold a position (48 = 2 days for H1)
   start_date: "2016-01-01"
 
 symbols:
@@ -63,7 +68,9 @@ news_filter:
   enabled: false
   minutes_before: 60
   minutes_after: 60
-  high_impact_events: ["High", "NFP", "FOMC", "CPI"]
+  # Add ISO datetime strings here when you want to block trading around events.
+  # Example: ["2026-06-06T12:30:00+00:00"]  (NFP release time)
+  high_impact_events: []
 
 notifications:
   telegram:

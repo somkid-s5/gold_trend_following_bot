@@ -18,7 +18,6 @@ def setup_logger(name: str = "gold_trading_bot", log_dir: str = "logs") -> loggi
     stream_handler.setFormatter(formatter)
     logger.addHandler(stream_handler)
 
-    # FIXED: 6
     file_handler = RotatingFileHandler(
         Path(log_dir) / f"{name}.log",
         maxBytes=10 * 1024 * 1024,   # 10 MB per file

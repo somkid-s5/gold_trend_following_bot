@@ -21,23 +21,13 @@ interface SystemStatus {
   } | null;
 }
 
-// Generate equity curve data (from real API or simulated)
-function generateEquityCurve(balance: number) {
-  const points = 60;
-  const data = [];
-  let val = balance * 0.85; // start from 85% of current
-  for (let i = 0; i < points; i++) {
-    const drift = (balance - val) / (points - i) + (Math.random() - 0.45) * (balance * 0.008);
-    val = Math.max(val + drift, balance * 0.7);
-    data.push({
-      day: i + 1,
-      equity: Math.round(val * 100) / 100,
-      invested: balance * 0.85,
-    });
-  }
-  // Ensure last point matches current
-  data[data.length - 1].equity = balance;
-  return data;
+// Generate a flat line at current balance (honest baseline when no real data exists)
+function generateBaselineCurve(balance: number) {
+  return Array.from({ length: 10 }, (_, i) => ({
+    day: i + 1,
+    equity: balance,
+    invested: balance,
+  }));
 }
 
 interface CustomTooltipProps {
@@ -66,7 +56,8 @@ interface Props {
 
 export default function OverviewSection({ apiOnline }: Props) {
   const [sysStatus, setSysStatus] = useState<SystemStatus>({});
-  const [chartData, setChartData] = useState(() => generateEquityCurve(10000));
+  const [chartData, setChartData] = useState(() => generateBaselineCurve(10000));
+  const [hasRealData, setHasRealData] = useState(false);
 
   const fetchSystemStatus = useCallback(async () => {
     if (!apiOnline) return;
@@ -75,16 +66,18 @@ export default function OverviewSection({ apiOnline }: Props) {
       setSysStatus(res.data);
       
       if (res.data.runtime?.equity_history && res.data.runtime.equity_history.length > 0) {
-        // Use real history
+        // Use real history from live trading
         const realData = res.data.runtime.equity_history.map((h, i) => ({
           day: i + 1,
           equity: h.equity,
           invested: h.balance
         }));
         setChartData(realData);
+        setHasRealData(true);
       } else if (res.data.runtime?.balance) {
-        // Fallback to simulated if no history yet
-        setChartData(generateEquityCurve(res.data.runtime.balance));
+        // No history yet — show honest flat line at current balance
+        setChartData(generateBaselineCurve(res.data.runtime.balance));
+        setHasRealData(false);
       }
     } catch {
       // silently fail, we still show defaults
@@ -184,6 +177,11 @@ export default function OverviewSection({ apiOnline }: Props) {
               <span className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-[0.1em]">
                 Equity Curve
               </span>
+              {!hasRealData && (
+                <span className="text-[9px] text-[var(--color-text-dim)] italic">
+                  Awaiting live data...
+                </span>
+              )}
               <div className="flex items-center gap-3 text-[10px] text-[var(--color-text-dim)]">
                 <span className="flex items-center gap-1.5">
                   <span className="w-2 h-0.5 bg-[var(--color-primary)] rounded-full"></span> Equity

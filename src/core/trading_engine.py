@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 
 from src.broker.mt5_connector import MT5Connector
+from src.core.exit_logic import ExitManager
 from src.data.data_handler import DataHandler
 from src.data.news_calendar import NewsCalendar
 from src.core.operational_guards import OperationalGuardEvaluator
@@ -50,6 +51,7 @@ class TradingEngine:
         news_cfg = config.get("news_filter", {"enabled": False, "high_impact_events": []})
         self.news_calendar = NewsCalendar(news_cfg)
         self.guard_evaluator = OperationalGuardEvaluator(config.get("operational_guards", {}))
+        self.exit_manager = ExitManager()
         self.notifier = notifier
 
     def _live_account_state(self) -> tuple[float, float]:
@@ -68,7 +70,24 @@ class TradingEngine:
             self.risk_manager.is_paused_by_circuit_breaker(equity),
         ):
             if not decision.allowed:
+                # MON-2: Send Telegram alert on critical risk blocks
+                if self.notifier and "Daily limit" in decision.reason or "Global Halt" in decision.reason:
+                    self.notifier.send_event(
+                        title="🚨 RISK LIMIT TRIGGERED",
+                        now_utc=now_utc,
+                        detail=f"Trading halted: {decision.reason} | Equity: ${equity:,.2f}",
+                    )
                 return decision
+        
+        # RISK-3: Check total portfolio exposure
+        if self.connector:
+            all_positions = self.connector.get_positions()
+            risk_pct = float(self.config["risk"]["risk_per_trade_pct"])
+            exposure_check = self.risk_manager.check_total_exposure(equity, all_positions, risk_pct)
+            if not exposure_check.allowed:
+                self.logger.info("EXPOSURE BLOCK | %s", exposure_check.reason)
+                return exposure_check
+        
         return RiskDecision(True)
 
     def _strategy_positions(self, symbol: str, strategy_name: str) -> list[dict[str, Any]]:
@@ -123,7 +142,6 @@ class TradingEngine:
                 results.append(EngineResult(strategy_name, "managed", f"Updated SL for {symbol} ticket {ticket}: {instruction.reason}"))
         return results
 
-    # FIXED: 3
     def run(self, symbol: str, strategy_name: str) -> list[EngineResult]:
         try:
             guard_path = self.config.get("operational_guards", {}).get("guard_report_path")
@@ -144,8 +162,11 @@ class TradingEngine:
                 self.logger.warning("DATA ERROR   | %s: No bars returned", symbol)
                 return []
             
+            # Pre-calculate indicators on frame for both position management and pyramiding
+            prepared_frame = strategy.prepare_data(frame)
+            
             # 1. Position Management
-            results.extend(self._manage_open_positions(symbol, frame, strategy_name))
+            results.extend(self._manage_open_positions(symbol, prepared_frame, strategy_name))
 
             # 2. Risk & Market Condition Check
             all_open = self.connector.get_positions()
@@ -158,7 +179,7 @@ class TradingEngine:
             tick = self.connector.get_symbol_tick(symbol)
             spread = (float(tick.ask) - float(tick.bid)) / (float(symbol_info.point) or 0.01)
             
-            self.logger.info("SCANNING     | %s | Price: %.2f | Spread: %.1f", symbol, frame["close"].iloc[-1], spread)
+            self.logger.info("SCANNING     | %s | Price: %.2f | Spread: %.1f", symbol, prepared_frame["close"].iloc[-1], spread)
             
             decision = self._passes_risk(spread, now_utc, equity)
             if not decision.allowed:
@@ -167,27 +188,31 @@ class TradingEngine:
 
             # 3. Execution Check
             existing = self._strategy_positions(symbol, strategy_name)
-            max_addons = int(self.config["risk"]["allow_strategy_addons"].get(strategy_name, 10))
+            max_addons = int(self.config["risk"]["allow_strategy_addons"].get(strategy_name, 3))
             
-            # --- TITAN SINGULARITY: PYRAMIDING LOGIC ---
+            # --- TITAN SINGULARITY: PYRAMIDING LOGIC (Trend Anchored) ---
             if existing:
                 if len(existing) >= max_addons:
                     return results
                 
-                # Check for Pyramiding Opportunity (Every 2.0 ATR move in favor)
-                last_pos = max(existing, key=lambda x: int(x["ticket"]))
-                entry_price = float(last_pos["price_open"])
-                current_price = frame["close"].iloc[-1]
-                atr_val = frame["atr"].iloc[-1]
-                
+                last_pos = existing[-1]
                 action = "BUY" if int(last_pos["type"]) == 0 else "SELL"
+                current_price = prepared_frame["close"].iloc[-1]
+                ema_200 = prepared_frame["ema_200"].iloc[-1]
+                atr_val = prepared_frame["atr"].iloc[-1]
+
+                # Trend Anchor Guard
+                if (action == "BUY" and current_price < ema_200) or (action == "SELL" and current_price > ema_200):
+                    return results
+
+                entry_price = float(last_pos["price_open"])
                 dist = (current_price - entry_price) if action == "BUY" else (entry_price - current_price)
-                
+
                 if dist < (atr_val * 2.0):
                     return results
                 self.logger.info("🗼 SINGULARITY PYRAMID | Adding position for %s", symbol)
 
-            signals = strategy.generate_signals(frame, {"symbol": symbol})
+            signals = strategy.generate_signals(prepared_frame, {"symbol": symbol})
             if signals:
                 best = max(signals, key=lambda x: x.confidence)
                 results.append(self._execute_signal(symbol, best, equity))
@@ -250,7 +275,6 @@ class TradingEngine:
                     )
                     self.risk_manager.sync_from_history(trades_df)
                     
-                    # FIXED: 3
                     results.extend(self.run(symbol, name))
             
             # Final update for portfolio state

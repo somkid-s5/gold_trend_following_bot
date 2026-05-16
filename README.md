@@ -1,71 +1,93 @@
-# 🏆 TITAN SINGULARITY v4.0 (God Mode)
+# ⚡ TITAN Berserker v3.0 — Institutional Gold Trading Bot
 
-ระบบเทรดอัตโนมัติ (Algorithmic Trading) ระดับสูงสุดที่ถูกปลดลิมิตเพื่อการทำกำไรแบบทวีคูณ (Exponential Growth) ด้วยกลยุทธ์ **Institutional Trend Pyramiding** และการบริหารเงินแบบ **Full Real-time Compounding (Singularity Scaling)** พร้อมระบบความปลอดภัยอัจฉริยะ (Dynamic Risk)
+ระบบเทรดทองคำอัตโนมัติ (Algorithmic Trading) ที่ใช้กลยุทธ์ **Institutional Trend Following** พร้อมระบบ Risk Management ระดับมืออาชีพ
 
-## 🚀 จุดเด่นของระบบ (God Mode Edition)
-- **Singularity Scaling**: ถอดระบบ Scaling Delta แบบขั้นบันไดออก คำนวณ Lot ใหม่ทุกวินาทีจาก Equity 100% ทำให้พอร์ตเติบโตแบบก้าวกระโดด
-- **Exponential Pyramiding**: ระบบถมไม้ตามน้ำ สูงสุด 10 ไม้ ทุกๆ การขยับของราคา 2.0 ATR ในเทรนด์หลัก (EMA 200 Anchor)
-- **Smart Aggression**: ความเสี่ยงเริ่มต้น 15% ต่อไม้เพื่อเร่งกำไร แต่จะลดความเสี่ยงอัตโนมัติเหลือ 5% หากแพ้ เพื่อป้องกัน Drawdown แบบต่อเนื่อง
-- **Ultra-Fast Breakeven**: เลื่อน SL บังทุนไวเป็นพิเศษที่ RR 0.5 และปิดกำไร 50% ทันทีที่ RR 2.0 เพื่อล็อกกำไรเข้ากระเป๋าให้เร็วที่สุด
-- **Zero Friction**: ไม่หลบข่าว ปะทะทุกความผันผวนของ NFP/FOMC เพื่อจับรอบ Breakout รุนแรง
+## 🎯 กลยุทธ์หลัก (Strategy)
+- **Tokyo Range Breakout**: วิเคราะห์ช่วง Asian Session (00:00-08:00 UTC) แล้วเข้าเทรด Breakout ในช่วง London-NY Overlap (12:00-18:00 UTC)
+- **Triple Filter**: กรอง Signal ด้วย EMA 200 (Trend), RSI 14 (Momentum), ADX 14 (Trend Strength) — เข้าเฉพาะ trade คุณภาพสูง
+- **Smart Exit**: ขยับ SL มา Breakeven ที่ RR 0.5, ปิดกำไร 50% ที่ RR 2.0, TP เต็มที่ RR 3.0
+- **Protective Risk**: ลด risk อัตโนมัติหลังแพ้ (2% → 1.5% → 1%), boost เล็กน้อยหลังชนะ 3+ ครั้ง (max 1.3x)
+
+## 📊 ผลการทดสอบ (Backtest Results)
+| Period | Balance | Trades | Win Rate | Max DD | ROI |
+|--------|---------|--------|----------|--------|-----|
+| 1 Year ($10K) | $24,334 | 145 | 70.3% | 5.5% | +143% |
+| 10 Years ($200) | $7.08M | 1,738 | 66.7% | 16.1% | compound |
+
+> ⚠️ ผลทดสอบรวม Spread (3 pts), Slippage (0-1.5 pts), Multi-bar holding, และ Commission แล้ว
 
 ## 🛠️ โครงสร้างโปรเจกต์
 ```text
-├── api/            # Backend (FastAPI) & Bot Manager ควบคุมการ Start/Stop
-├── config/         # Unified YAML Configuration (จัดการ Symbols และ Risk)
-├── data/           # ข้อมูลข่าวสารและไฟล์ข้อมูล CSV สำหรับการทดสอบ
-├── frontend/       # Dashboard สวยงาม (React + Vite + TypeScript)
-├── scripts/        # สคริปต์ช่วยรันระบบ และระบบ Backtest รวมศูนย์
-├── src/            # หัวใจบอท (Trading Logic, Risk Manager, MT5 Connector)
-├── main.py         # สมองกลหลักและตัวเปิดระบบ Dashboard (Entry Point)
-└── .env            # ไฟล์เก็บค่า Config ลับ (Credentials)
+├── api/              # FastAPI Backend — Bot control API + Dashboard
+├── config/           # YAML Configuration (Symbols, Risk, Strategy)
+├── frontend/         # Dashboard UI (React + Vite + TypeScript)
+├── scripts/          # Backtest runner + utility scripts
+├── src/
+│   ├── broker/       # MT5 Connector
+│   ├── core/         # Trading Engine, Exit Logic, Operational Guards
+│   ├── data/         # Data fetching
+│   ├── risk/         # Risk Manager (DD limits, lot calculation, exposure)
+│   ├── strategies/   # Trend Following strategy
+│   └── utils/        # Backtester, Logger, Telegram Notifier
+├── main.py           # Entry point — starts bot + API server
+└── .env              # Credentials (MT5, Telegram, API Key)
 ```
 
-## 🏁 วิธีเริ่มใช้งาน (Quick Start)
+## 🏁 Quick Start
 
-### 1. ติดตั้งสภาพแวดล้อม (Installation)
-แนะนำให้ใช้งานผ่าน Python 3.12+ บน Windows:
+### 1. ติดตั้ง (Installation)
 ```powershell
-# ติดตั้ง Library ที่จำเป็น
+# Python 3.12+ on Windows required (MT5 dependency)
 pip install -r requirements.txt
-```
-_หมายเหตุ: สำหรับการพัฒนาหน้าจอ Dashboard ครั้งแรก ต้อง build frontend ด้วยคำสั่ง `cd frontend; npm install; npm run build` เพื่อให้ main.py แสดงผล UI ได้_
 
-### 2. ตั้งค่าบัญชี (Setup)
-สร้างไฟล์ `.env` จากตัวอย่าง `.env.example`:
+# Build Dashboard (ครั้งแรกเท่านั้น)
+cd frontend && npm install && npm run build && cd ..
+```
+
+### 2. ตั้งค่า (Configuration)
+สร้างไฟล์ `.env` จากตัวอย่าง:
 ```env
 MT5_LOGIN=your_login
 MT5_PASSWORD=your_password
 MT5_SERVER=Exness-MT5Trial7
-API_KEY=your_secret_api_key  # สำหรับล็อคหน้า Dashboard
+MT5_PATH=C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe
+
+API_KEY=your_secret_api_key     # สำหรับ Dashboard authentication
+TELEGRAM_BOT_TOKEN=your_token   # แจ้งเตือนผ่าน Telegram
+TELEGRAM_CHAT_ID=your_chat_id
 ```
 
-### 3. รันระบบ (Execution)
-รันเพียงคำสั่งเดียวเพื่อเริ่มต้นการเทรดและเปิดหน้า Dashboard:
-
+### 3. รันระบบ (Run)
 ```powershell
 python main.py
 ```
+- **Dashboard**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
+- **Telegram**: แจ้งเตือนอัตโนมัติทุก trade + daily summary
 
-- **Dashboard**: `http://localhost:8000` (แสดงผล UI อัตโนมัติหากมีการ build แล้ว)
-- **API Docs**: `http://localhost:8000/docs`
-
-### 4. การทดสอบย้อนหลัง (Backtesting)
-สามารถรันผ่าน Dashboard (หน้า Backtest Lab) หรือใช้ Command Line:
+### 4. Backtesting
 ```bash
-# ทดสอบแบบมาตรฐาน (Single Symbol)
-python scripts/run_backtest.py --symbol XAUUSDm --days 365
+# Standard Backtest (1 ปี, ทุน $10,000)
+python scripts/run_backtest.py --symbol XAUUSDm --days 365 --balance 10000
 
-# ทดสอบแบบพอร์ตโฟลิโอ DCA (Monthly Investment)
-python scripts/run_backtest.py --type dca --days 720 --balance 10000 --dca 200
+# DCA Backtest (เติมเงินรายเดือน)
+python scripts/run_backtest.py --type dca --days 365 --balance 10000 --dca 200
+
+# ปรับ Risk per trade
+python scripts/run_backtest.py --symbol XAUUSDm --days 365 --balance 10000 --risk 1.5
 ```
 
-## 🛡️ การปรับปรุงล่าสุด (Singularity V4.0)
-- **God Mode Activated**: การออกแบบเชิงคณิตศาสตร์ที่รีดศักยภาพกำไรของทองคำในระดับทวีคูณ (Pyramiding + 100% Compounding)
-- **Ultra-Integrated**: `main.py` ทำหน้าที่เป็น Orchestrator จัดการทั้งการเทรดและ API Dashboard ในตัวเดียว
-- **High Contrast UI**: ปรับโทนสีข้อความและเส้นขอบให้สว่างขึ้น มองเห็นชัดเจนบนพื้นหลัง AMOLED Dark
-- **Docker Removed**: คลีนไฟล์ Docker ออกทั้งหมดเพื่อความเบาและรวดเร็วในการรันแบบ Local
+## 🛡️ Risk Management
+| Parameter | ค่า | อธิบาย |
+|-----------|------|--------|
+| Risk per Trade | 2% | ความเสี่ยงต่อ trade (ลดอัตโนมัติหลัง loss) |
+| Max Daily Loss | 5% | หยุดเทรดถ้าขาดทุนเกิน 5% ต่อวัน |
+| Max Drawdown | 20% | Circuit breaker — หยุดทั้งระบบ |
+| Max Total Exposure | 10% | จำกัด risk รวมของทุก position |
+| Max Spread | 50 pts | ไม่เทรดเมื่อ spread สูงผิดปกติ |
+
+## 📐 Config อยู่ที่ `config/config.yaml`
+ปรับได้ทุกค่าโดยไม่ต้องแก้โค้ด — ดู comment ในไฟล์สำหรับคำอธิบาย
 
 ---
-**Disclaimer**: การลงทุนมีความเสี่ยงสูง ระบบนี้ถูกออกแบบมาเพื่อการรันความเสี่ยงสูง (High Risk, Extreme Reward) โปรดใช้งานด้วยความระมัดระวังและทดสอบจนเข้าใจพฤติกรรมพอร์ตก่อนเสมอ
-_🛰 TITAN AI Engine v4.0 | Singularity (God Mode) Edition_
+**⚠️ Disclaimer**: การลงทุนมีความเสี่ยง ควรทดสอบบน Demo Account อย่างน้อย 1-2 สัปดาห์ก่อนใช้เงินจริง

@@ -4,8 +4,10 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from api.routes import bot, config, monitor
 from api.auth import get_api_key
+from dotenv import load_dotenv
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(ROOT_DIR / ".env")
 
 app = FastAPI(
     title="TITAN Berserker API",
@@ -13,10 +15,10 @@ app = FastAPI(
     description="API for the TITAN Gold Trend Following Trading Bot",
 )
 
-# CORS — allows local React dev server
+# CORS — allows local React dev server & Docker access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

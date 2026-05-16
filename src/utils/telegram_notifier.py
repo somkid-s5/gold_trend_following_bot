@@ -70,7 +70,6 @@ class TelegramNotifier:
         state[f"event_{event_key}_sent_at"] = now_utc.isoformat()
         self.save_state(state)
 
-    # FIXED: 7
     def send_message(self, text: str) -> bool:
         if not self.is_enabled():
             self.logger.info("Telegram notifier disabled or missing credentials.")
@@ -99,7 +98,6 @@ class TelegramNotifier:
                     time.sleep(2)
         return False
 
-    # FIXED: 5 - MINIMALIST & ESSENTIAL
     def build_daily_summary(
         self,
         strategy_name: str,
@@ -129,7 +127,6 @@ class TelegramNotifier:
             f"```"
         )
 
-    # FIXED: MINIMALIST EVENT MESSAGES
     def build_event_message(self, event_name: str, now_utc: datetime, details: str) -> str:
         event_map = {
             "Startup": "🚀 *SYSTEM START*",

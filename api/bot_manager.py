@@ -136,9 +136,31 @@ class BotManager:
             return {"status": "error", "message": f"Error stopping bot: {e}"}
 
     def is_running(self) -> bool:
-        if self._process is None:
-            return False
-        if self._process.poll() is not None:
+        # 1. Check internal process state
+        if self._process is not None:
+            if self._process.poll() is None:
+                return True
             self._process = None
-            return False
-        return True
+
+        # 2. Check for PID file (manually started)
+        pid_file = ROOT_DIR / "logs" / "bot.pid"
+        if pid_file.exists():
+            try:
+                pid = int(pid_file.read_text())
+                if os.name == 'nt':
+                    # Windows check for PID
+                    import ctypes
+                    PROCESS_QUERY_INFORMATION = 0x0400
+                    handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_INFORMATION, False, pid)
+                    if handle:
+                        ctypes.windll.kernel32.CloseHandle(handle)
+                        return True
+                else:
+                    # Linux/Mac check for PID
+                    os.kill(pid, 0)
+                    return True
+            except:
+                # If error (invalid PID or no access), assume not running or stale
+                pass
+                
+        return False
